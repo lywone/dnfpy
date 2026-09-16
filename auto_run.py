@@ -46,7 +46,8 @@ SIZE_TOLERANCE = 0.02               # 窗口尺寸容差（±2%：模拟器边�
 
 BACK_STEP = 0.2                     # 阶段1：先向后跑（←）的秒数
 FWD_STEP = 2.0                      # 阶段1：向前直跑（→）的秒数
-DIAG_STEP = 0.5                     # 阶段1：斜向跑（→+↑ 或 →+↓）单次秒数
+DIAG_UP_STEP = 0.5                  # 阶段1：斜上跑（→+↑）单次秒数
+DIAG_DOWN_STEP = 1.0                # 阶段1：斜下跑（→+↓）单次秒数（用户要求 0.5s → 1s）
 ROUND_SECONDS = 22.0                # 阶段1：一轮跑图总时长（之后检查按钮）
 MOVE_STEP = 2.0                     # 阶段2：未检测到时继续前进的秒数
 F10_WAIT = 3.0                      # 阶段3：按 F10 后等待复查秒数
@@ -583,7 +584,7 @@ def confirm_button(frame, template_path, label, roi=None):
 
 # ---------------- 三个阶段 ----------------
 def stage1_forward(hwnd):
-    """阶段1：循环执行「后退0.2s → 前进2s → 斜上(→+↑)0.5s → 斜下(→+↓)0.5s」，
+    """阶段1：循环执行「后退0.2s → 前进2s → 斜上(→+↑)0.5s → 斜下(→+↓)1.0s」，
     累计 ROUND_SECONDS=22s 后结束（之后进入阶段2检测）。"""
     t0 = time.time()            # 记录开始时间
     while time.time() - t0 < ROUND_SECONDS:  # 未跑满 22s 就继续循环
@@ -594,16 +595,16 @@ def stage1_forward(hwnd):
         # 2) 再向前直跑 FWD_STEP 秒（按住 →）
         send_key(hwnd, VK["right"], True)  # 按住 →（开始前进）
         time.sleep(FWD_STEP)               # 持续 2s
-        # 3) 同时按住 ↑ + → 斜上跑 DIAG_STEP 秒（→ 保持按住）
+        # 3) 同时按住 ↑ + → 斜上跑 DIAG_UP_STEP 秒（→ 保持按住）
         send_key(hwnd, VK["up"], True)     # 按住 ↑
-        time.sleep(DIAG_STEP)              # 持续 0.5s
+        time.sleep(DIAG_UP_STEP)           # 持续 0.5s
         send_key(hwnd, VK["up"], False)    # 松开 ↑
-        # 4) 同时按住 ↓ + → 斜下跑 DIAG_STEP 秒（→ 保持按住）
+        # 4) 同时按住 ↓ + → 斜下跑 DIAG_DOWN_STEP 秒（→ 保持按住）
         send_key(hwnd, VK["down"], True)   # 按住 ↓
-        time.sleep(DIAG_STEP)              # 持续 0.5s
+        time.sleep(DIAG_DOWN_STEP)         # 持续 1.0s
         send_key(hwnd, VK["down"], False)  # 松开 ↓
         send_key(hwnd, VK["right"], False)  # 松开 →（结束本轮前进）
-    print(f"[跑图] 完成一轮（{ROUND_SECONDS:.0f}s：退0.2→进2→斜上0.5→斜下0.5 循环）")  # 打印跑图完成日志
+    print(f"[跑图] 完成一轮（{ROUND_SECONDS:.0f}s：退0.2→进2→斜上0.5→斜下1.0 循环）")  # 打印跑图完成日志
 
 
 def stage2_wait_challenge(hwnd):
