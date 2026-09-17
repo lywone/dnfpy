@@ -56,6 +56,7 @@ CONFIRM_TH = 0.50                   # 「确认」按钮独立阈值（模板简
 REWARD_TH = 0.70                    # 「领奖结算」专用阈值（城镇同位置金字按钮误匹配 0.606，结算真按钮 1.0）
 RECHECK_ROUNDS = 10                 # 发现「领奖结算」后复查「再次挑战」的次数（10 次）
 RECHECK_WAIT = 2.0                  # 复查「再次挑战」的间隔秒数（2s 一次）
+STAGE2_TIMEOUT = 180.0              # 阶段2 检测「再次挑战/领奖结算」的超时秒数（3 分钟）；超时提示音并重新跑图
 SCALES = (0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6)  # 多尺度匹配（游戏画面缩放兼容）
 SHOT_FAIL_LIMIT = 5                 # 连续截图失败次数上限（模拟器断开判定）
 
@@ -74,6 +75,7 @@ TEMPLATE_SHOP = os.path.join(IMG_DIR, "template_shop.png")        # 「神秘商
 TEMPLATE_SHOP_BACK = os.path.join(IMG_DIR, "template_shop_back.png")  # 商店界面「返回」按钮模板路径
 TEMPLATE_BUY = os.path.join(IMG_DIR, "template_buy.png")          # 「购买」按钮模板路径
 TEMPLATE_BUY_POPUP = os.path.join(IMG_DIR, "template_buy_popup.png")  # 「购买物品」弹框模板路径
+TEMPLATE_BUY_POPUP_BTN = os.path.join(IMG_DIR, "template_buy_popup_btn.png")  # 购买弹框内「购买」按钮模板（红底白字 74x40）
 TEMPLATE_BUY_DONE = os.path.join(IMG_DIR, "template_buy_done.png")    # 「完成购买」奖励弹窗模板路径
 TEMPLATE_BUY_DONE_CONFIRM = os.path.join(IMG_DIR, "template_buy_done_confirm.png")  # 奖励弹窗「确认」模板路径
 TEMPLATE_REFRESH_FREE = os.path.join(IMG_DIR, "template_refresh_free.png")  # 「1000免费 立即刷新」（免费态）模板路径
@@ -438,22 +440,11 @@ def ensure_window_size():
         print(f"[窗口] 配置缺少客户区记录，请手动把窗口调回 {sw}x{sh} 后重新运行。")
         sys.exit(1)
     if not set_client_size(hwnd, target_cw, target_ch):  # 调整窗口客户区失败（可能权限不足被 UIPI 拦截）
-        print("[窗口] 自动调整窗口失败（脚本以管理员运行时会自动调整成功），请手动把模拟器窗口调回原尺寸…")
+        print("[窗口] 自动调整窗口失败（脚本以管理员运行时会自动调整成功），5s 后直接运行…")
     else:                          # 调整指令已发出
-        print(f"[窗口] 已调整窗口客户区至 {target_cw}x{target_ch}，等待生效…")
-    for i in range(60):            # 最多等待 120s（60 次 × 2s）：等窗口刷新或用户手动调整
-        time.sleep(2)              # 每次间隔 2s
-        f2 = capture_hdmi()        # 重新截取画面
-        if f2 is None:             # 截图失败（调整窗口可能短暂中断）
-            continue               # 继续等待下一次
-        h2, w2 = f2.shape[0], f2.shape[1]  # 调整后的画面尺寸
-        if abs(w2 - sw) / sw <= SIZE_TOLERANCE and abs(h2 - sh) / sh <= SIZE_TOLERANCE:  # 已恢复记录尺寸
-            cw2, ch2 = get_client_size(hwnd)  # 读调整后的客户区
-            save_window_size(w2, h2, cw2, ch2)  # 更新记录（若边框略有变化）
-            print(f"[窗口] 尺寸已恢复：HDMI {w2}x{h2}")  # 打印成功
-            return                 # 返回继续主流程
-    print(f"[窗口] 等待超时（120s），窗口仍未恢复 {sw}x{sh}，请手动调整后重新运行。")
-    sys.exit(1)                    # 退出脚本（不盲目跑图）
+        print(f"[窗口] 已调整窗口客户区至 {target_cw}x{target_ch}，等待 5s 生效…")
+    time.sleep(5)                  # 固定等 5s 让窗口刷新，不再校验屏幕尺寸（用户要求）
+    return                         # 直接返回继续主流程
 
 
 def capture_hdmi():
@@ -610,9 +601,16 @@ def stage1_forward(hwnd):
 def stage2_wait_challenge(hwnd):
     """阶段2：检测「再次挑战」或「领奖结算」；
     都没有 → 前进 MOVE_STEP 秒 → 再检测。
-    返回 "challenge"（再次挑战）或 "reward"（领奖结算）"""
+    返回 "challenge"（再次挑战）/ "reward"（领奖结算）/ "restart"（超时未检测到，重新跑图）"""
     n = 0                       # 连续截图失败计数
+    t_start = time.time()       # 记录本阶段检测开始时间（用于 3 分钟超时判断）
     while True:                 # 无限循环直到检测到按钮
+        if time.time() - t_start > STAGE2_TIMEOUT:  # 超过 3 分钟仍未检测到任何按钮
+            print(f"[检测] 超过 {STAGE2_TIMEOUT:.0f}s 未检测到「再次挑战」/「领奖结算」，提示音后重新跑图…")  # 打印超时日志
+            beep(True)          # 播放提示音（提醒用户注意）
+            time.sleep(0.4)     # 间隔 0.4s
+            beep(True)          # 再响一声（双响提示更明显）
+            return "restart"    # 返回重启标志（主循环收到后从跑图重新开始）
         frame = capture_hdmi()  # 截取当前画面
         if frame is not None:   # 截图成功
             n = 0               # 重置失败计数
@@ -1289,34 +1287,46 @@ def shop_refresh():
         # a. 检测「购买」按钮
         bs, bc = detect_button(frame, TEMPLATE_BUY)  # 全图检测「购买」
         if bs is not None and bs >= BUY_TH and bc:  # 匹配达标
-            print(f"[商店] 点击「购买」（相似度 {bs:.3f}，坐标 {bc}），2s 后查弹框…")  # 打印日志
+            print(f"[商店] 点击「购买」（相似度 {bs:.3f}，坐标 {bc}），3s 后查弹框…")  # 打印日志
             adb_tap(bc[0], bc[1])  # 点击购买按钮
-            time.sleep(2.0)     # 等 2s 让购买弹框出现
+            time.sleep(3.0)     # 等 3s 让购买弹框出现（用户要求 3s）
             frame2 = capture_hdmi()  # 再截一张
             if frame2 is not None:  # 截图成功
                 ps, pc = detect_button(frame2, TEMPLATE_BUY_POPUP)  # 检测「购买物品」弹框
                 if ps is not None and ps >= POPUP_TH and pc:  # 弹框已出现
-                    bs2, bc2 = detect_button(frame2, TEMPLATE_BUY)  # 检测弹框内「购买」
-                    if bs2 is not None and bs2 >= BUY_TH and bc2:  # 匹配达标
-                        print(f"[商店] 「购买物品」弹框出现（{ps:.3f}），点击弹框内「购买」（{bs2:.3f} @{bc2}）")  # 打印日志
-                        adb_tap(bc2[0], bc2[1])  # 点击弹框内购买按钮
-                        time.sleep(2.0)  # 等 2s 让购买完成
-                        # 关闭「完成购买」奖励弹窗
-                        frame3 = capture_hdmi()  # 再截一张
-                        if frame3 is not None:  # 截图成功
-                            ds, dc = detect_button(frame3, TEMPLATE_BUY_DONE)  # 检测「完成购买」奖励弹窗
-                            if ds is not None and ds >= BUY_DONE_TH and dc:  # 弹窗出现
-                                ks, kc = detect_button(frame3, TEMPLATE_BUY_DONE_CONFIRM)  # 检测奖励弹窗「确认」
-                                if ks is not None and ks >= BUY_DONE_CONFIRM_TH and kc:  # 匹配达标
-                                    print(f"[商店] 「完成购买」奖励弹窗出现（{ds:.3f}），点击「确认」（{ks:.3f} @{kc}）")  # 打印日志
-                                    adb_tap(kc[0], kc[1])  # 点击确认关闭弹窗
-                                    time.sleep(2.0)  # 等 2s
-                                else:  # 弹窗内没有确认按钮
-                                    print("[商店] 奖励弹窗内未检测到「确认」按钮")  # 打印日志
-                            else:  # 奖励弹窗未出现
-                                print(f"[商店] 未出现「完成购买」奖励弹窗（{ds or 0:.3f}）")  # 打印日志
-                    else:  # 弹框内没有购买按钮
-                        print("[商店] 弹框内未检测到「购买」按钮")  # 打印日志
+                    # 检测弹框内「购买」按钮：最多重复检查 3 次 × 2s，仍失败 → 提示音并退出程序
+                    buy_popup_found = False  # 弹框内购买是否已点击
+                    for k in range(3):      # 重复检查 3 次
+                        bs2, bc2 = detect_button(frame2, TEMPLATE_BUY_POPUP_BTN)  # 检测弹框内「购买」（红底白字模板）
+                        if bs2 is not None and bs2 >= BUY_TH and bc2:  # 匹配达标
+                            print(f"[商店] 「购买物品」弹框出现（{ps:.3f}），点击弹框内「购买」（{bs2:.3f} @{bc2}）")  # 打印日志
+                            adb_tap(bc2[0], bc2[1])  # 点击弹框内购买按钮
+                            time.sleep(2.0)  # 等 2s 让购买完成
+                            buy_popup_found = True  # 标记点击成功
+                            break               # 跳出重查循环
+                        print(f"[商店] 弹框内「购买」未识别（第 {k+1} 次/共3次），2s 后重查…")  # 打印重查日志
+                        time.sleep(2)           # 等 2s 再查
+                        frame2 = capture_hdmi()  # 重新截取画面
+                        if frame2 is None:      # 截图失败
+                            break               # 跳出（截图失败不再重试）
+                    if not buy_popup_found:     # 3 次检查都未识别到弹框内「购买」
+                        print("[商店] 弹框内「购买」按钮 3 次检查均失败，提示音并退出程序")  # 打印失败日志
+                        beep(True); time.sleep(0.4); beep(True); time.sleep(0.4); beep(True)  # 三响提示音提醒
+                        sys.exit(1)             # 退出程序（用户要求：识别失败直接退出）
+                    # 购买成功 → 关闭「完成购买」奖励弹窗
+                    frame3 = capture_hdmi()  # 再截一张
+                    if frame3 is not None:  # 截图成功
+                        ds, dc = detect_button(frame3, TEMPLATE_BUY_DONE)  # 检测「完成购买」奖励弹窗
+                        if ds is not None and ds >= BUY_DONE_TH and dc:  # 弹窗出现
+                            ks, kc = detect_button(frame3, TEMPLATE_BUY_DONE_CONFIRM)  # 检测奖励弹窗「确认」
+                            if ks is not None and ks >= BUY_DONE_CONFIRM_TH and kc:  # 匹配达标
+                                print(f"[商店] 「完成购买」奖励弹窗出现（{ds:.3f}），点击「确认」（{ks:.3f} @{kc}）")  # 打印日志
+                                adb_tap(kc[0], kc[1])  # 点击确认关闭弹窗
+                                time.sleep(2.0)  # 等 2s
+                            else:  # 弹窗内没有确认按钮
+                                print("[商店] 奖励弹窗内未检测到「确认」按钮")  # 打印日志
+                        else:  # 奖励弹窗未出现
+                            print(f"[商店] 未出现「完成购买」奖励弹窗（{ds or 0:.3f}）")  # 打印日志
                 else:  # 购买弹框未出现
                     print(f"[商店] 未出现「购买物品」弹框（{ps or 0:.3f}）")  # 打印日志
             time.sleep(1.0)     # 等 1s
@@ -1426,15 +1436,44 @@ def test_move():
 
 
 # ---------------- 主流程 ----------------
+def retemplate_from_live():
+    """从当前实况画面按千分比裁剪「再次挑战」「领奖结算」按钮作新模板。
+    用于窗口/HDMI 分辨率变化导致模板失配时一键重制（运行前请把游戏画面停在结算界面）。
+    返回 0=成功 1=失败"""
+    frame = capture_hdmi()       # 截取当前实况画面
+    if frame is None:            # 截图失败
+        print("[模板] 截图失败，无法重裁模板")
+        return 1                 # 返回失败
+    h, w = frame.shape[0], frame.shape[1]  # 画面尺寸
+    # 按千分比裁剪两个按钮（位置固定，与分辨率无关）：
+    c1 = frame[int(h * 0.105):int(h * 0.175), int(w * 0.83):int(w * 0.94)]   # 「再次挑战」
+    c2 = frame[int(h * 0.195):int(h * 0.265), int(w * 0.83):int(w * 0.94)]   # 「领奖结算」
+    if c1.size == 0 or c2.size == 0:   # 裁剪区域无效
+        print("[模板] 裁剪区域无效")
+        return 1                 # 返回失败
+    cv2.imwrite(TEMPLATE_PATH, c1)     # 覆盖「再次挑战」模板
+    cv2.imwrite(TEMPLATE_REWARD, c2)   # 覆盖「领奖结算」模板
+    save_window_size(w, h)       # 同步更新 config 里的窗口尺寸记录
+    s1, _ = detect_challenge(frame)    # 立即验证再次挑战
+    s2, _ = detect_reward(frame)       # 立即验证领奖结算
+    ok = s1 is not None and s1 >= MATCH_TH  # 再次挑战达标即视为成功
+    print(f"[模板] 重裁完成：再次挑战 {s1:.3f}、领奖结算 {s2 if s2 is None else round(s2,3)}（画面 {w}x{h}）")
+    return 0 if ok else 1        # 返回成功/失败
+
+
 def main():
+    # 纯工具模式不涉及按键操作 → 无需提权，先处理（提权会重启进程导致输出丢失）
+    if "--retemplate" in sys.argv:  # 重裁模板模式（窗口尺寸变化后，画面停在结算界面时运行）
+        sys.exit(retemplate_from_live())  # 从当前画面重裁两个模板并返回结果
+    if "--capture" in sys.argv:  # 截图模式参数
+        sys.exit(0 if make_template() else 1)  # 截图并返回结果
+
     ensure_admin()  # 游戏以管理员运行，必须先提权，否则按键被 UIPI 拦截
 
     if "--selftest" in sys.argv:  # 自测模式参数
         sys.exit(selftest())    # 跑自测并以结果作为退出码
     if "--testmove" in sys.argv:  # 移动测试模式参数
         sys.exit(test_move())   # 跑移动测试
-    if "--capture" in sys.argv:  # 截图模式参数
-        sys.exit(0 if make_template() else 1)  # 截图并返回结果
 
     if not os.path.exists(TEMPLATE_PATH):  # 「再次挑战」模板不存在
         print(f"缺少模板：{TEMPLATE_PATH}")  # 打印提示
@@ -1473,6 +1512,9 @@ def main():
             result = stage2_wait_challenge(hwnd)  # 阶段2：检测「再次挑战」/「领奖结算」
             if result == "challenge":  # 检测到再次挑战
                 stage3_trigger_challenge(hwnd)   # 点击「再次挑战」（阶段3）
+            elif result == "restart":  # 超时未检测到按钮（3 分钟）
+                print(f"\n[重启] 长时间未检测到「再次挑战」/「领奖结算」，从本轮跑图重新开始…")  # 打印重启日志
+                continue               # 跳过下方领奖逻辑，回到循环开头重新跑图（stage1）
             else:               # 检测到领奖结算
                 done = stage3_reward_settle(hwnd)   # 点击「领奖结算」→「结算」→「确认」（领奖流程）
                 if done == "done":  # 领奖完成

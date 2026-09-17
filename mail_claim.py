@@ -36,7 +36,7 @@ def run_loop(quiet):
         print("\n" + "=" * 52)   # 打印轮次分隔线（空行 + 52 个等号）
         print(f"  第 {rounds} 轮：接收邮件 → 刷新商店 → 切换角色")   # 打印本轮标题
         print("=" * 52)   # 打印分隔线（52 个等号）
-        a.beep(True)  # 播放成功提示音（每轮开始提醒一次）
+        # 注：切换角色成功后进入下一轮【不播放提示音】（用户要求：避免每轮都响），退出脚本时才响
         # 0) 确保在城镇主界面（不在则返回）
         for i in range(4):  # 最多尝试 4 次回城（模拟器界面可能有层级，需多次 BACK）
             frame = a.capture_hdmi()  # 截取当前游戏画面（BGR ndarray 或 None）
@@ -60,7 +60,7 @@ def run_loop(quiet):
         ok = a.char_switch()  # 调用 auto_run 的切换角色流程（找可刷新→开始游戏→确认）
         if not ok:  # 切角返回 False：无可刷新角色 / 面板未打开
             print(f"\n[第{rounds}轮] 没有可切换的角色（无可刷新），结束循环。")  # 打印结束日志
-            a.beep(False)  # 播放失败提示音（低频）提醒用户循环已结束
+            a.beep(True)  # 播放成功提示音（用户要求：退出脚本之后再给提示音，正常完成）
             if not quiet:  # 非静默模式才弹窗（--quiet 参数时跳过）
                 a.msgbox("所有角色均无可刷新，切换角色循环结束。", TITLE)  # 弹窗告知用户
             return 0  # 正常退出（返回码 0），结束整个循环程序

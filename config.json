@@ -1,8 +1,8 @@
 {
   "window_size": {
-    "hdmi_w": 2141,
-    "hdmi_h": 1207,
-    "client_w": 1144,
-    "client_h": 660
+    "hdmi_w": 1360,
+    "hdmi_h": 764,
+    "client_w": null,
+    "client_h": null
   }
 }
