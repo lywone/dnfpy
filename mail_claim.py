@@ -64,7 +64,8 @@ def run_loop(quiet):
             if not quiet:  # 非静默模式才弹窗（--quiet 参数时跳过）
                 a.msgbox("所有角色均无可刷新，切换角色循环结束。", TITLE)  # 弹窗告知用户
             return 0  # 正常退出（返回码 0），结束整个循环程序
-        print(f"\n[第{rounds}轮] 切换角色成功，按 ESC 关闭提示弹框，1s 后开始下一轮…")  # 打印等待下一轮日志
+        print(f"\n[第{rounds}轮] 切换角色成功，等待 8s 后按 ESC 关闭提示弹框…")  # 打印等待下一轮日志
+        time.sleep(8.0)  # 先等 8s（让新角色场景加载完成、提示弹框出现）再按 ESC
         a.press_esc()   # 按 ESC 键：把新角色进入城镇后的提示弹框去掉（引导/活动等）
         time.sleep(1.0)  # 等 1s（ESC 生效 + 界面稳定）后再往下执行下一轮
 
