@@ -268,11 +268,21 @@ def tap_key(hwnd, vk):
 
 
 def press_esc():
-    """按一次 ESC 键：关闭游戏内可能弹出的提示框（如新角色进入城镇后的引导/活动弹窗）。
-    实测 PostMessage 发 ESC 到窗口无效；改用 adb 注入安卓 ESC 按键事件（keyevent 111）有效。"""
-    subprocess.run(adb_base() + ["shell", "input", "keyevent", "111"],  # 执行 adb 发送安卓 ESC 按键事件
-                   capture_output=True, text=True, timeout=20)  # 静默执行、20s 超时
-    print("[按键] 已按 ESC 关闭提示弹框（adb keyevent 111）")  # 打印按键日志
+    """按一次 ESC 键：关闭游戏内提示弹框（如活动引导弹窗）。
+    实测：adb keyevent / PostMessage 对活动弹窗无效（游戏区分按键来源）；
+    模拟器是管理员 Qt 窗口，必须「管理员进程 + 置前台 + keybd_event 真实键盘注入」才有效
+    （脚本已通过 ensure_admin 提权，本函数在管理员权限下运行）。"""
+    hwnd = find_game_window()            # 查找游戏窗口句柄
+    if hwnd is None:                     # 找不到游戏窗口
+        print("[按键] 未找到游戏窗口，无法按 ESC")  # 打印提示
+        return                           # 直接返回（跳过）
+    force_foreground(hwnd)               # 强制把游戏窗口置为前台（Qt 窗口激活后才接收键盘）
+    time.sleep(0.3)                      # 等 0.3s 让窗口完成激活
+    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes
+    user32.keybd_event(0x1B, 0, 0, 0)    # keybd_event 按下 ESC（虚拟键码 0x1B=27）
+    time.sleep(0.12)                     # 极短间隔（120ms）
+    user32.keybd_event(0x1B, 0, 2, 0)    # keybd_event 松开 ESC（KEYEVENTF_KEYUP=2）
+    print("[按键] 已按 ESC（置前台 + keybd_event）")  # 打印按键日志
 
 
 def scroll_wheel(hwnd, delta, x=960, y=540):
