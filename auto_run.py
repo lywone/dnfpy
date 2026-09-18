@@ -267,6 +267,16 @@ def tap_key(hwnd, vk):
     send_key(hwnd, vk, False)  # 发送松开消息
 
 
+def press_esc():
+    """按一次 ESC 键：关闭游戏内可能弹出的提示框（如新角色进入城镇后的引导/活动弹窗）"""
+    hwnd = find_game_window()  # 查找游戏窗口句柄
+    if hwnd is None:           # 找不到游戏窗口
+        print("[按键] 未找到游戏窗口，无法发送 ESC")  # 打印提示
+        return                 # 直接返回（跳过）
+    tap_key(hwnd, 0x1B)        # 短按 ESC（虚拟键码 0x1B = 27）
+    print("[按键] 已按 ESC 关闭提示弹框")  # 打印按键日志
+
+
 def scroll_wheel(hwnd, delta, x=960, y=540):
     """PostMessage 直发滚轮（模拟器游戏面板滚动）。
     delta>0 向上滚（列表滚到顶部），delta<0 向下滚（列表往下看）。
