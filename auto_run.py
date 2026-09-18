@@ -268,13 +268,11 @@ def tap_key(hwnd, vk):
 
 
 def press_esc():
-    """按一次 ESC 键：关闭游戏内可能弹出的提示框（如新角色进入城镇后的引导/活动弹窗）"""
-    hwnd = find_game_window()  # 查找游戏窗口句柄
-    if hwnd is None:           # 找不到游戏窗口
-        print("[按键] 未找到游戏窗口，无法发送 ESC")  # 打印提示
-        return                 # 直接返回（跳过）
-    tap_key(hwnd, 0x1B)        # 短按 ESC（虚拟键码 0x1B = 27）
-    print("[按键] 已按 ESC 关闭提示弹框")  # 打印按键日志
+    """按一次 ESC 键：关闭游戏内可能弹出的提示框（如新角色进入城镇后的引导/活动弹窗）。
+    实测 PostMessage 发 ESC 到窗口无效；改用 adb 注入安卓 ESC 按键事件（keyevent 111）有效。"""
+    subprocess.run(adb_base() + ["shell", "input", "keyevent", "111"],  # 执行 adb 发送安卓 ESC 按键事件
+                   capture_output=True, text=True, timeout=20)  # 静默执行、20s 超时
+    print("[按键] 已按 ESC 关闭提示弹框（adb keyevent 111）")  # 打印按键日志
 
 
 def scroll_wheel(hwnd, delta, x=960, y=540):
