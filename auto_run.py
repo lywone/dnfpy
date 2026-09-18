@@ -412,6 +412,10 @@ def ensure_window_size():
     if frame is None:              # 截图失败（模拟器未就绪）
         print("[窗口] 无法截图，跳过窗口尺寸校验（后续流程会报 ADB 错误）")  # 打印提示
         return                     # 跳过校验，交给后续流程处理
+    if frame.std() < 5:            # 画面标准差极低 = 黑屏（HDMI 未连接/模拟器未正常显示）
+        print("[窗口] 模拟器画面为黑屏（HDMI 输出异常/模拟器未正常显示），请打开模拟器窗口并确认游戏画面后重新运行。")  # 打印黑屏提示
+        msgbox("模拟器画面黑屏：请打开模拟器窗口、确认游戏画面正常显示后重新运行脚本。", "dnfm-auto 挂机")  # 弹窗明确告知原因
+        sys.exit(1)                # 退出（避免黑屏状态下继续跑导致模板全失配）
     h, w = frame.shape[0], frame.shape[1]  # 当前 HDMI 画面尺寸
     hwnd = find_game_window()      # 找游戏窗口（调整尺寸需要句柄）
     cw = ch = None                 # 当前客户区尺寸（默认未知）
