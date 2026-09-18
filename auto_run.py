@@ -731,6 +731,43 @@ def adb_roll(dx=0, dy=10):
                        capture_output=True, timeout=30)
 
 
+def mouse_click(x, y):
+    """真实鼠标点击游戏画面坐标（HDMI 像素坐标）。
+    背景：adb tap 对模拟器 display 2 已失效（HDMI 断后恢复触摸注入坏）；
+    模拟器窗口接收真实鼠标点击转安卓触摸（与手动点击等效）。
+    坐标换算：HDMI 画面 (x,y) → 窗口客户区坐标（按比例）→ 屏幕坐标（ClientToScreen）。
+    需要管理员权限（脚本已 ensure_admin 提权，UIPI 才放行）。"""
+    hwnd = find_game_window()            # 查找游戏窗口句柄
+    if hwnd is None:                     # 找不到游戏窗口
+        print("[鼠标] 未找到游戏窗口，无法点击")  # 打印提示
+        return False                     # 返回失败
+    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes
+    frame = capture_hdmi()               # 截取当前画面（拿 HDMI 实际尺寸做换算）
+    if frame is None:                    # 截图失败
+        print("[鼠标] 无法截图，取消点击")  # 打印提示
+        return False                     # 返回失败
+    fw, fh = frame.shape[1], frame.shape[0]  # HDMI 画面宽高
+    cw, ch = get_client_size(hwnd)       # 窗口客户区尺寸
+    if not cw or not ch:                 # 客户区获取失败
+        print("[鼠标] 无法获取窗口客户区，取消点击")  # 打印提示
+        return False                     # 返回失败
+    wx = int(x * cw / fw)                # HDMI 坐标 → 窗口客户区 x（按宽度比例）
+    wy = int(y * ch / fh)                # HDMI 坐标 → 窗口客户区 y（按高度比例）
+    force_foreground(hwnd)               # 强制置前台（鼠标点击需要窗口可接收输入）
+    time.sleep(0.3)                      # 等 0.3s 让窗口激活
+    import ctypes.wintypes               # 显式导入 wintypes（POINT 结构）
+    pt = ctypes.wintypes.POINT(0, 0)     # 客户区原点结构
+    user32.ClientToScreen(hwnd, ctypes.byref(pt))  # 客户区原点 → 屏幕坐标（含边框偏移）
+    sx, sy = pt.x + wx, pt.y + wy        # 目标屏幕坐标 = 客户区原点 + 客户区内坐标
+    user32.SetCursorPos(sx, sy)          # 移动鼠标到目标位置
+    time.sleep(0.2)                      # 等 0.2s 让鼠标就位
+    user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN 按下左键
+    time.sleep(0.08)                     # 极短间隔（80ms）
+    user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP 松开左键
+    print(f"[鼠标] 点击 ({x},{y}) → 窗口 ({wx},{wy}) → 屏幕 ({sx},{sy})")  # 打印点击日志
+    return True                          # 返回成功
+
+
 def stage3_trigger_challenge(hwnd):
     """阶段3：检测到「再次挑战」→ 点击 → 0.5s 后检测「确认」弹框：
     有「确认」→ 点击确认 → 0.5s 后再检测：
