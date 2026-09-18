@@ -71,6 +71,7 @@ def run_loop(quiet):
 
 
 def main():
+    a.ensure_admin()  # 游戏窗口是管理员 Qt 窗口：必须提权才能用 keybd_event 注入键盘（ESC 关弹窗），非管理员时自动弹 UAC 提权重启
     args = [x for x in sys.argv[1:] if x != "--quiet"]  # 过滤掉 --quiet 后的模式参数列表
     quiet = "--quiet" in sys.argv  # 是否静默模式（True=不弹窗）
     mode = args[0] if args else "loop"  # 第一个参数为模式名；无参数时默认 loop

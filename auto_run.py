@@ -80,7 +80,8 @@ TEMPLATE_BUY_POPUP_BTN = os.path.join(IMG_DIR, "template_buy_popup_btn.png")  # 
 TEMPLATE_BUY_DONE = os.path.join(IMG_DIR, "template_buy_done.png")    # 「完成购买」奖励弹窗模板路径
 TEMPLATE_BUY_DONE_CONFIRM = os.path.join(IMG_DIR, "template_buy_done_confirm.png")  # 奖励弹窗「确认」模板路径
 TEMPLATE_REFRESH_FREE = os.path.join(IMG_DIR, "template_refresh_free.png")  # 「1000免费 立即刷新」（免费态）模板路径
-TEMPLATE_REFRESH = os.path.join(IMG_DIR, "template_refresh.png")  # 「1000 立即刷新」付费态（同源裁剪 0.83）模板路径
+TEMPLATE_REFRESH = os.path.join(IMG_DIR, "template_refresh.png")
+TEMPLATE_POPUP = os.path.join(IMG_DIR, "template_popup_guide.png")  # 活动引导弹窗标题「3分钟直升15万」模板路径（按 ESC 关闭目标）  # 「1000 立即刷新」付费态（同源裁剪 0.83）模板路径
 
 # 切换角色（选角）相关模板
 TEMPLATE_CHAR_SELECT = os.path.join(IMG_DIR, "template_char_select.png")      # 「选角」按钮模板路径
@@ -268,21 +269,34 @@ def tap_key(hwnd, vk):
 
 
 def press_esc():
-    """按一次 ESC 键：关闭游戏内提示弹框（如活动引导弹窗）。
+    """按 ESC 关闭游戏内活动引导弹窗（如「3分钟直升15万」）。
+    方案：检测弹窗标题模板 → 检测到则「置前台 + keybd_event 真实键盘 ESC」→ 复查是否关闭，
+    最多循环 5 次；弹窗消失或不存在则结束。
     实测：adb keyevent / PostMessage 对活动弹窗无效（游戏区分按键来源）；
-    模拟器是管理员 Qt 窗口，必须「管理员进程 + 置前台 + keybd_event 真实键盘注入」才有效
+    模拟器是管理员 Qt 窗口，必须「管理员进程 + 置前台 + keybd_event」才有效
     （脚本已通过 ensure_admin 提权，本函数在管理员权限下运行）。"""
     hwnd = find_game_window()            # 查找游戏窗口句柄
     if hwnd is None:                     # 找不到游戏窗口
         print("[按键] 未找到游戏窗口，无法按 ESC")  # 打印提示
         return                           # 直接返回（跳过）
-    force_foreground(hwnd)               # 强制把游戏窗口置为前台（Qt 窗口激活后才接收键盘）
-    time.sleep(0.3)                      # 等 0.3s 让窗口完成激活
-    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes
-    user32.keybd_event(0x1B, 0, 0, 0)    # keybd_event 按下 ESC（虚拟键码 0x1B=27）
-    time.sleep(0.12)                     # 极短间隔（120ms）
-    user32.keybd_event(0x1B, 0, 2, 0)    # keybd_event 松开 ESC（KEYEVENTF_KEYUP=2）
-    print("[按键] 已按 ESC（置前台 + keybd_event）")  # 打印按键日志
+    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes（keybd_event 用）
+    for i in range(5):                   # 最多循环 5 次（每次按一次 ESC 后复查）
+        frame = capture_hdmi()           # 截取当前画面（检测弹窗是否还在）
+        if frame is None:                # 截图失败
+            time.sleep(1)                # 等 1s
+            continue                     # 继续循环
+        score, center = detect_button(frame, TEMPLATE_POPUP)  # 检测活动弹窗标题模板
+        if score is None or score < CONFIRM_TH or not center:  # 弹窗不存在或已关闭
+            print("[按键] 活动弹窗已关闭或未出现")  # 打印结果
+            return                       # 结束
+        print(f"[按键] 检测到活动弹窗（相似度 {score:.3f}），第 {i+1} 次按 ESC…")  # 打印按键日志
+        force_foreground(hwnd)           # 强制把游戏窗口置为前台（Qt 窗口激活后才接收键盘）
+        time.sleep(0.3)                  # 等 0.3s 让窗口完成激活
+        user32.keybd_event(0x1B, 0, 0, 0)  # keybd_event 按下 ESC（虚拟键码 0x1B=27）
+        time.sleep(0.12)                 # 极短间隔（120ms）
+        user32.keybd_event(0x1B, 0, 2, 0)  # keybd_event 松开 ESC（KEYEVENTF_KEYUP=2）
+        time.sleep(1.0)                  # 等 1s 让 ESC 生效后再复查
+    print("[按键] 连续按 5 次 ESC 弹窗仍未关闭，放弃处理")  # 打印放弃日志
 
 
 def scroll_wheel(hwnd, delta, x=960, y=540):
