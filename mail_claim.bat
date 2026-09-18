@@ -1,5 +1,5 @@
 @echo off
-rem 鐙珛鍔熻兘锛氶偖浠堕鍙栵紙鍙屽嚮杩愯锛岃鍏堟妸娓告垙鍒囧埌鍩庨晣涓荤晫闈級
+rem 独立功能：邮件领取（双击运行，请先把游戏切到城镇主界面）
 cd /d %~dp0
 .\.venv\Scripts\python.exe mail_claim.py
 echo.
