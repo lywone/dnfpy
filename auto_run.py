@@ -717,6 +717,7 @@ def stage3_trigger_challenge(hwnd):
             adb_tap(cx, cy)     # adb 点击按钮
             time.sleep(0.5)     # 等 0.5s 让确认弹框出现
             # 处理「确认」弹框：有「确认」→ 点确认 → 0.5s 复查；无「确认」→ 跳出（回顶部重新点再次挑战）
+            confirm_times = 0    # 本次「再次挑战」已连续点击「确认」的次数
             while True:         # 确认弹框处理循环
                 frame2 = capture_hdmi()  # 重新截图（检测确认按钮）
                 if frame2 is None:       # 截图失败
@@ -724,7 +725,11 @@ def stage3_trigger_challenge(hwnd):
                     continue             # 继续重试截图
                 cs, cc = detect_button(frame2, TEMPLATE_CHALLENGE_CONFIRM)  # 全图检测「确认」按钮（红底白字）
                 if cs is not None and cs >= CONFIRM_TH and cc:  # 检测到确认按钮
-                    print(f"[触发] 检测到确认弹框「确认」（相似度 {cs:.3f}，坐标 {cc}），点击确认…")  # 打印确认点击日志
+                    if confirm_times >= 5:  # 已连续点了 5 次「确认」仍存在 → 异常，不再点确认
+                        print("[触发] 确认弹框已连续点击 5 次仍存在，跳出确认循环，直接重新点击「再次挑战」")  # 打印异常处理日志
+                        break              # 强制跳出确认循环（回顶部重新点再次挑战）
+                    confirm_times += 1     # 计数 +1
+                    print(f"[触发] 检测到确认弹框「确认」（第 {confirm_times} 次，相似度 {cs:.3f}，坐标 {cc}），点击确认…")  # 打印确认点击日志
                     adb_tap(cc[0], cc[1])  # 点击确认按钮
                     time.sleep(0.5)        # 等 0.5s 后再检测是否还有确认
                     continue               # 回到确认循环：继续检测还有没有「确认」
