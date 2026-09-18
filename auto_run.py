@@ -66,6 +66,7 @@ TEMPLATE_PATH = os.path.join(IMG_DIR, "template_challenge.png")   # 「再次挑
 TEMPLATE_REWARD = os.path.join(IMG_DIR, "template_reward.png")    # 「领奖结算」模板路径
 TEMPLATE_SETTLE = os.path.join(IMG_DIR, "template_settle.png")    # 「结算」按钮模板路径
 TEMPLATE_CONFIRM = os.path.join(IMG_DIR, "template_confirm.png")  # 「确认」按钮模板路径
+TEMPLATE_CHALLENGE_CONFIRM = os.path.join(IMG_DIR, "template_challenge_confirm.png")  # 「再次挑战」后确认弹框的「确认」按钮模板（红底白字 75x35）
 TEMPLATE_TOWN = os.path.join(IMG_DIR, "template_town.png")        # 「返回城镇」按钮模板路径
 TEMPLATE_MAIL = os.path.join(IMG_DIR, "template_mail.png")        # 「邮箱」图标模板路径
 TEMPLATE_CLAIM = os.path.join(IMG_DIR, "template_claim.png")      # 「领取全部物品」按钮模板路径
@@ -699,7 +700,11 @@ def adb_roll(dx=0, dy=10):
 
 
 def stage3_trigger_challenge(hwnd):
-    """阶段3：检测到「再次挑战」→ 连续两次确认后点击 → 等 3s → 复查；仍有则再点，直到按钮消失"""
+    """阶段3：检测到「再次挑战」→ 点击 → 0.5s 后检测「确认」弹框：
+    有「确认」→ 点击确认 → 0.5s 后再检测：
+        还有「确认」→ 继续点击确认（弹框未关，重复确认）
+        没有「确认」→ 回到顶部重新检测「再次挑战」（若还在则再点，进入下一轮触发）
+    直到「再次挑战」按钮消失（已进入副本）→ 结束阶段3"""
     while True:                 # 循环直到「再次挑战」按钮消失
         frame = capture_hdmi()  # 截取当前画面
         if frame is None:       # 截图失败
@@ -708,11 +713,24 @@ def stage3_trigger_challenge(hwnd):
         score, center = confirm_button(frame, TEMPLATE_PATH, "再次挑战", roi=challenge_roi(frame))  # 限定区域确认「再次挑战」
         if score is not None and score >= MATCH_TH and center:  # 确认达标
             cx, cy = center     # 取出按钮中心坐标
-            print(f"[触发] 点击「再次挑战」（相似度 {score:.3f}，坐标 {cx},{cy}）")  # 打印点击日志
+            print(f"[触发] 点击「再次挑战」（相似度 {score:.3f}，坐标 {cx},{cy}），0.5s 后查确认弹框…")  # 打印点击日志
             adb_tap(cx, cy)     # adb 点击按钮
-            time.sleep(F10_WAIT)  # 等 3s 让游戏反应
-            continue            # 复查是否还有按钮
-        print("[触发] 「再次挑战」已消失，进入下一轮")  # 按钮消失
+            time.sleep(0.5)     # 等 0.5s 让确认弹框出现
+            # 处理「确认」弹框：有「确认」→ 点确认 → 0.5s 复查；无「确认」→ 跳出（回顶部重新点再次挑战）
+            while True:         # 确认弹框处理循环
+                frame2 = capture_hdmi()  # 重新截图（检测确认按钮）
+                if frame2 is None:       # 截图失败
+                    time.sleep(1)        # 等 1s
+                    continue             # 继续重试截图
+                cs, cc = detect_button(frame2, TEMPLATE_CHALLENGE_CONFIRM)  # 全图检测「确认」按钮（红底白字）
+                if cs is not None and cs >= CONFIRM_TH and cc:  # 检测到确认按钮
+                    print(f"[触发] 检测到确认弹框「确认」（相似度 {cs:.3f}，坐标 {cc}），点击确认…")  # 打印确认点击日志
+                    adb_tap(cc[0], cc[1])  # 点击确认按钮
+                    time.sleep(0.5)        # 等 0.5s 后再检测是否还有确认
+                    continue               # 回到确认循环：继续检测还有没有「确认」
+                break            # 没有「确认」→ 跳出确认循环
+            continue            # 回到顶部：重新检测「再次挑战」（若按钮还在则继续点）
+        print("[触发] 「再次挑战」已消失，进入下一轮")  # 按钮消失（已进入副本）
         return                  # 结束阶段3
 
 
