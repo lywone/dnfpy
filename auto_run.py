@@ -26,6 +26,7 @@ import os          # 操作系统接口：拼接路径、判断文件是否存�
 import sys         # 系统接口：sys.argv 读取命令行参数（--selftest/--testmove/--capture）
 import glob        # 路径通配：glob.glob 在安装目录中查找 adb.exe
 import time        # 时间控制：按键保持时长、界面等待、轮次延时
+import msvcrt      # 控制台按键等待：msvcrt.getch() 阻塞等待任意键
 import subprocess  # 子进程：调用 adb.exe 执行截图/点击/滑动/按键
 import tempfile    # 临时目录：截图暂存文件放到系统临时目录
 
@@ -1618,9 +1619,15 @@ def main():
                 done = stage3_reward_settle(hwnd)   # 点击「领奖结算」→「结算」→「确认」（领奖流程）
                 if done == "done":  # 领奖完成
                     # mail_claim()  # 已注释：邮件领取（用户要求只保留跑图）
-                    print("\n[完成] 领奖确认完成，脚本自动退出（已注释邮件/商店/切角，只保留跑图）。")  # 打印完成日志
+                    print("\n[完成] 本轮跑图+领奖已完成（已返回城镇）。")  # 打印完成日志
                     beep(True)  # 播放成功提示音
-                    return 0    # 直接退出脚本（不弹窗阻塞，自动退出）
+                    # 不退出脚本：等待用户在控制台按任意键后重新开始下一轮
+                    print("按任意键重新开始下一轮（按 Ctrl+C 退出脚本）...")
+                    try:
+                        msvcrt.getch()  # 阻塞等待用户按任意键（回车/空格/字母均可）
+                    except Exception:
+                        time.sleep(5)   # 按键等待异常（非控制台环境）则等 5s 再继续
+                    continue            # 回到 while True 开头，重新跑下一轮
     except KeyboardInterrupt:   # 用户按 Ctrl+C
         print("\n已手动停止（Ctrl+C）")  # 打印停止日志
         beep(True)              # 播放提示音
