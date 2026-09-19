@@ -48,7 +48,7 @@ BACK_STEP = 0.2                     # 阶段1：先向后跑（←）的秒数
 FWD_STEP = 2.0                      # 阶段1：向前直跑（→）的秒数
 DIAG_UP_STEP = 0.5                  # 阶段1：斜上跑（→+↑）单次秒数
 DIAG_DOWN_STEP = 1.0                # 阶段1：斜下跑（→+↓）单次秒数（用户要求 0.5s → 1s）
-ROUND_SECONDS = 22.0                # 阶段1：一轮跑图总时长（之后检查按钮）
+ROUND_SECONDS = 15.0                # 阶段1：一轮跑图总时长（之后检查按钮）
 MOVE_STEP = 2.0                     # 阶段2：未检测到时继续前进的秒数
 F10_WAIT = 3.0                      # 阶段3：按 F10 后等待复查秒数
 MATCH_TH = 0.60                     # 「再次挑战」匹配相似度阈值（主城误匹配最高约 0.58）
@@ -57,7 +57,7 @@ REWARD_TH = 0.70                    # 「领奖结算」专用阈值（城镇同
 RECHECK_ROUNDS = 10                 # 发现「领奖结算」后复查「再次挑战」的次数（10 次）
 RECHECK_WAIT = 2.0                  # 复查「再次挑战」的间隔秒数（2s 一次）
 STAGE2_TIMEOUT = 180.0              # 阶段2 检测「再次挑战/领奖结算」的超时秒数（3 分钟）；超时提示音并重新跑图
-SCALES = (0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6)  # 多尺度匹配（游戏画面缩放兼容）
+SCALES = (0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0)  # 多尺度匹配（覆盖分辨率差异，最大 2.0 倍）
 SHOT_FAIL_LIMIT = 5                 # 连续截图失败次数上限（模拟器断开判定）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # 脚本所在目录（作为工程根）
@@ -474,8 +474,11 @@ def ensure_window_size():
         sys.exit(1)                # 退出（避免带错尺寸跑图导致模板失配）
     target_cw, target_ch = saved.get("client_w"), saved.get("client_h")  # 记录的目标客户区
     if not target_cw or not target_ch:  # 记录里没有客户区（旧配置）
-        print(f"[窗口] 配置缺少客户区记录，请手动把窗口调回 {sw}x{sh} 后重新运行。")
-        sys.exit(1)
+        print(f"[窗口] 配置缺少客户区记录，自动记录当前尺寸（HDMI {w}x{h}，客户区 {cw or '?'}x{ch or '?'}）。")
+        print(f"[窗口] 注意：若 HDMI 分辨率与模板基准 1360x764 差异较大，模板匹配可能失效，"
+              f"请把模拟器分辨率调回 1360x764 后再运行（模板按该分辨率裁剪）。")
+        save_window_size(w, h, cw, ch)  # 记录当前尺寸（下次运行按新尺寸校验）
+        return                         # 继续运行（不再直接退出）
     if not set_client_size(hwnd, target_cw, target_ch):  # 调整窗口客户区失败（可能权限不足被 UIPI 拦截）
         print("[窗口] 自动调整窗口失败（脚本以管理员运行时会自动调整成功），5s 后直接运行…")
     else:                          # 调整指令已发出
