@@ -25,6 +25,181 @@ import auto_run as a   # 引入 auto_run.py 的所有函数（截图/模板匹�
 TITLE = "dnfm-auto 独立功能"   # 弹窗标题：msgbox 提示框的统一标题
 
 
+def _decompose_back_to_town():
+    """从分解/背包界面返回城镇主界面（点左上角返回箭头 + BACK 兜底）。"""
+    print("[分解] 返回主页面…")
+    for i in range(4):          # 最多 4 轮
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is None:       # 截图失败
+            time.sleep(1)       # 等 1s
+            continue            # 继续循环
+        if a.at_town(frame):    # 已在城镇主界面
+            print("[分解] 已回到城镇主界面")  # 打印日志
+            return              # 返回
+        a.adb_tap(50, 43)       # 点背包界面左上角返回箭头（实测有效）
+        time.sleep(2.0)         # 等 2s
+        frame2 = a.capture_hdmi()  # 再截一张
+        if frame2 is not None and a.at_town(frame2):  # 已回城镇
+            print("[分解] 已回到城镇主界面")  # 打印日志
+            return              # 返回
+        a.adb_back()            # 兜底：按返回键
+        time.sleep(2.0)         # 等 2s
+
+
+def _decompose_equip():
+    """分解装备流程（仅在 mail_claim.py 内实现，不改 auto_run.py）：
+    前置：等 DECOMPOSE_WAIT_AFTER_MAIL → 点背包 → 点分解按钮 → 等分解弹框
+    1) 点弹框内金黄「分解」→ 等 2s → 检查外层确认按钮（5 次 × 2s）→ 点外层确认
+       ；5 次未出 → 打印文字提示，继续走关闭分解流程
+    2) 点外层确认 → 等 2s → 检查高价值二次确认（5 次 × 2s）→ 点内层确认
+       ；期间先出「获得道具」弹窗则视为无高价值确认，直接进结果环节
+       ；5 次未出 → 打印文字提示，继续走关闭分解流程
+    3) 点内层确认 → 等 2s → 检查「获得道具」弹窗（5 次 × 2s）→ 点结果确认
+       ；5 次未出 → 打印文字提示
+    4) 点 × 关闭分解弹框 → _decompose_back_to_town() 回主页面，往下一流程
+    任一步失败都不中断，统一走关闭/回主页面。"""
+    print(f"[分解] 等待 {a.DECOMPOSE_WAIT_AFTER_MAIL:.0f}s（邮件完成缓冲）…")  # 打印等待日志
+    time.sleep(a.DECOMPOSE_WAIT_AFTER_MAIL)  # 等 2s（邮件流程结束后缓冲）
+
+    # 前置1：点「背包」图标 → 检测「分解」按钮（背包界面标志）
+    opened = False              # 背包界面是否已打开
+    for i in range(a.DECOMPOSE_MAX_TRY):  # 最多 10 轮
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is None:       # 截图失败
+            time.sleep(1)       # 等 1s
+            continue            # 继续循环
+        h, w = frame.shape[0], frame.shape[1]  # 画面高宽
+        ds, dc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_BTN, roi=a.decompose_btn_roi(frame))  # 检测「分解」按钮
+        if ds is not None and ds >= a.DECOMPOSE_TH and dc:  # 匹配达标 → 已在背包界面
+            print(f"[分解] 背包界面已打开（检测到「分解」按钮 {ds:.3f}）")  # 打印日志
+            opened = True       # 标记已打开
+            break               # 跳出循环
+        bs, bc = a.detect_button(frame, a.TEMPLATE_BAG, roi=(0, int(h * 0.6), w, h))  # 底部检测「背包」图标
+        if bs is not None and bs >= a.DECOMPOSE_TH and bc:  # 匹配达标
+            print(f"[分解] 点击「背包」图标（{bs:.3f}），1s 后检查…")  # 打印日志
+            a.adb_tap(bc[0], bc[1])  # 点击背包图标（打开背包）
+            time.sleep(1.0)     # 等 1s
+            continue            # 继续循环
+        print(f"[分解] 未检测到「背包」图标（第 {i+1} 轮），1s 后重试…")  # 打印重试日志
+        time.sleep(1)           # 等 1s 再试
+    if not opened:              # 10 轮没打开背包
+        print("[分解] 未能打开背包界面，跳过分解，继续下一流程")  # 打印失败日志
+        return False            # 返回失败
+
+    # 前置2：点「分解」按钮 → 检测分解弹框（分解标题栏，顶部中央 ROI）
+    popup_opened = False        # 分解弹框是否已打开
+    for i in range(a.DECOMPOSE_MAX_TRY):  # 最多 10 轮
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is None:       # 截图失败
+            time.sleep(1)       # 等 1s
+            continue            # 继续循环
+        ts, tc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_TITLE, roi=a.decompose_title_roi(frame))  # 顶部检测分解标题栏
+        if ts is not None and ts >= a.DECOMPOSE_TH and tc:  # 匹配达标 → 弹框已出现
+            print(f"[分解] 分解弹框已出现（标题栏 {ts:.3f}）")  # 打印日志
+            popup_opened = True  # 标记已打开
+            break               # 跳出循环
+        ds, dc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_BTN, roi=a.decompose_btn_roi(frame))  # 检测「分解」按钮
+        if ds is not None and ds >= a.DECOMPOSE_TH and dc:  # 匹配达标
+            print(f"[分解] 点击「分解」按钮（{ds:.3f}），1s 后检查弹框…")  # 打印日志
+            a.adb_tap(dc[0], dc[1])  # 点击分解按钮（打开分解弹框）
+            time.sleep(1.0)     # 等 1s
+            continue            # 继续循环
+        print(f"[分解] 未检测到「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
+        time.sleep(1)           # 等 1s 再试
+    if not popup_opened:        # 没打开分解弹框
+        print("[分解] 未能打开分解弹框，直接返回主页面")  # 打印日志
+        _decompose_back_to_town()  # 返回主页面
+        return False            # 返回失败
+
+    # 1) 点弹框内金黄「分解」→ 等 2s → 检查外层确认按钮（5 次 × 2s）
+    for i in range(a.DECOMPOSE_MAX_TRY):  # 最多 10 轮点金黄分解
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is None:       # 截图失败
+            time.sleep(1)       # 等 1s
+            continue            # 继续循环
+        gs, gc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_GO, roi=a.decompose_go_roi(frame))  # 检测金黄「分解」
+        if gs is not None and gs >= a.DECOMPOSE_TH and gc:  # 匹配达标
+            print(f"[分解] 点击弹框内「分解」（{gs:.3f}），2s 后检查外层确认…")  # 打印日志
+            a.adb_tap(gc[0], gc[1])  # 点击金黄分解按钮
+            break               # 已点中，进入等待确认阶段
+        print(f"[分解] 未检测到金黄「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
+        time.sleep(1)           # 等 1s 再试
+    # 等待 2s → 检查外层确认按钮，5 次 × 2s
+    time.sleep(2.0)             # 点完分解先等 2s 让弹窗弹出
+    outer_ok = False            # 外层确认是否点到
+    for i in range(5):          # 最多检查 5 次
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is not None:   # 画面有效
+            cs, cc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame))  # 中央检测「确认」
+            if (cs is not None and cs >= a.DECOMPOSE_TH and cc  # 确认按钮匹配达标
+                    and abs(cc[1] - a.DECOMPOSE_OUTER_CONFIRM[1]) < 60):  # 且 y 与实测外层确认接近（防误匹配）
+                print(f"[分解] 外层提示弹窗出现（{cs:.3f}），点击确认…")  # 打印日志
+                a.adb_tap(a.DECOMPOSE_OUTER_CONFIRM[0], a.DECOMPOSE_OUTER_CONFIRM[1])  # 点实测外层确认坐标
+                outer_ok = True  # 标记已点外层确认
+                break           # 跳出检查循环
+        print(f"[分解] 第 {i+1}/5 次未检测到外层确认，2s 后再查…")  # 打印等待日志
+        time.sleep(2.0)         # 等 2s 再查
+    if not outer_ok:            # 5 次都没等到外层确认
+        print("[分解] 5 次检查均未出现外层确认弹窗，关闭分解流程，继续返回主页面…")  # 文字提示
+
+    # 2) 点外层确认后 → 等 2s → 检查高价值二次确认（5 次 × 2s）
+    highvalue_ok = False        # 高价值确认是否点到（True=有点到；False=未点到/未出现）
+    if outer_ok:                # 仅当外层确认点到才继续
+        time.sleep(2.0)         # 点完外层确认先等 2s
+        for i in range(5):      # 最多检查 5 次
+            frame = a.capture_hdmi()  # 截取当前画面
+            if frame is not None:  # 画面有效
+                vs, vc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_HIGHVALUE, roi=a.decompose_popup_roi(frame))  # 中央检测高价值弹窗
+                if vs is not None and vs >= a.DECOMPOSE_TH and vc:  # 高价值二次确认出现
+                    print(f"[分解] 高价值二次确认出现（{vs:.3f}），点击内层确认…")  # 打印日志
+                    a.adb_tap(a.DECOMPOSE_INNER_CONFIRM[0], a.DECOMPOSE_INNER_CONFIRM[1])  # 点内层确认坐标
+                    highvalue_ok = True  # 标记已点内层确认
+                    break       # 跳出检查循环
+                rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 同时检测「获得道具」弹窗
+                if rs is not None and rs >= a.DECOMPOSE_TH and rc:  # 已出结果 → 说明无高价值确认
+                    print(f"[分解] 未出现高价值确认，直接到获得道具弹窗（{rs:.3f}），进入结果环节")  # 打印日志
+                    highvalue_ok = True  # 视为继续走结果环节（无高价值弹窗是正常情况）
+                    break       # 跳出检查循环
+            print(f"[分解] 第 {i+1}/5 次未检测到高价值确认，2s 后再查…")  # 打印等待日志
+            time.sleep(2.0)     # 等 2s 再查
+        if not highvalue_ok:    # 5 次都没等到
+            print("[分解] 5 次检查均未出现高价值确认弹窗，关闭分解流程，继续返回主页面…")  # 文字提示
+
+    # 3) 点内层确认后 → 等 2s → 检查「获得道具」弹窗（5 次 × 2s）
+    result_ok = False           # 结果弹窗是否点到
+    if highvalue_ok:            # 仅当上一环节通过才继续
+        time.sleep(2.0)         # 点完内层确认先等 2s
+        for i in range(5):      # 最多检查 5 次
+            frame = a.capture_hdmi()  # 截取当前画面
+            if frame is not None:  # 画面有效
+                rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 检测「获得道具」弹窗
+                if rs is not None and rs >= a.DECOMPOSE_TH and rc:  # 匹配达标
+                    print(f"[分解] 「获得道具」弹窗出现（{rs:.3f}），点击确认…")  # 打印日志
+                    a.adb_tap(a.DECOMPOSE_RESULT_CONFIRM[0], a.DECOMPOSE_RESULT_CONFIRM[1])  # 点获得道具确认坐标
+                    result_ok = True  # 标记已点结果确认
+                    break       # 跳出检查循环
+            print(f"[分解] 第 {i+1}/5 次未检测到「获得道具」弹窗，2s 后再查…")  # 打印等待日志
+            time.sleep(2.0)     # 等 2s 再查
+        if not result_ok:       # 5 次都没等到
+            print("[分解] 5 次检查均未出现「获得道具」弹窗，关闭分解流程，继续返回主页面…")  # 文字提示
+
+    # 4) 点 × 关闭分解弹框 → 返回主页面
+    for i in range(4):          # 最多 4 轮
+        frame = a.capture_hdmi()  # 截取当前画面
+        if frame is None:       # 截图失败
+            time.sleep(1)       # 等 1s
+            continue            # 继续循环
+        ts, _ = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_TITLE, roi=a.decompose_title_roi(frame))  # 检测分解标题栏
+        if ts is None or ts < a.DECOMPOSE_TH:  # 标题栏已消失 → 弹框已关闭
+            print("[分解] 分解弹框已关闭")  # 打印日志
+            break               # 跳出循环
+        a.adb_tap(a.DECOMPOSE_CLOSE_X[0], a.DECOMPOSE_CLOSE_X[1])  # 点右上角 × 关闭
+        time.sleep(1.5)         # 等 1.5s
+    _decompose_back_to_town()   # 返回主页面（城镇）
+    print("[分解] 分解装备流程完成")  # 打印完成日志
+    return True                 # 返回完成
+
+
 def run_loop(quiet):
     """循环：接收邮件 → 分解装备 → 刷新神秘商店 → 切换角色。
     切角成功 → 下一轮；切角无可刷新（False）→ 结束循环。"""
@@ -47,9 +222,9 @@ def run_loop(quiet):
         ok = a.mail_claim()  # 调用 auto_run 的邮箱领取流程（点邮箱→领取全部→确认→返回）
         if not ok:  # 邮件领取返回 False（多次尝试未完成）
             print(f"[第{rounds}轮] 邮件领取未完成，继续尝试分解装备、商店与切角…")  # 打印提示并继续后续步骤
-        # 2) 分解装备
+        # 2) 分解装备（本脚本内实现，不改 auto_run.py）
         print(f"\n[第{rounds}轮] 邮件领取完成，开始分解装备…")
-        a.decompose_equip()
+        _decompose_equip()
         # 3) 刷新神秘商店
         print(f"\n[第{rounds}轮] 邮件领取完成，开始刷新神秘商店…")  # 打印商店流程开始日志
         a.shop_refresh()  # 调用 auto_run 的商店刷新购买流程
