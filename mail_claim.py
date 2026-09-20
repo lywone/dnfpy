@@ -116,10 +116,6 @@ def _decompose_equip():
             continue            # 继续循环
         print(f"[分解] 未检测到「分解」入口按钮（第 {i+1} 轮）…")  # 打印重试日志
         time.sleep(1)           # 等 1s 再试
-            time.sleep(2.0)     # 等 2s 让弹框完全加载
-            continue            # 继续循环
-        print(f"[分解] 未检测到「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
-        time.sleep(1)           # 等 1s 再试
     if not popup_opened:        # 没打开分解弹框
         print("[分解] 未能打开分解弹框，直接返回主页面")  # 打印日志
         _decompose_back_to_town()  # 返回主页面
