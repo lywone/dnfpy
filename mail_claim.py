@@ -26,6 +26,8 @@ TITLE = "dnfm-auto 独立功能"   # 弹窗标题：msgbox 提示框的统一标
 
 # 「提示」对话框标题栏模板（templates/template_decompose_hint.png，点金黄分解后弹出）
 DECOMPOSE_HINT_TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "template_decompose_hint.png")
+# 「提示」对话框右下角「确认」按钮在 2560x1440 下的实测坐标（截图模板匹配换算）
+DECOMPOSE_HINT_CONFIRM = (1503, 1157)
 
 
 def _decompose_back_to_town():
@@ -142,13 +144,9 @@ def _decompose_equip():
         if frame is not None:   # 画面有效
             hs, hc = a.detect_button(frame, DECOMPOSE_HINT_TPL, roi=a.decompose_popup_roi(frame))  # 中央检测「提示」标题栏
             if hs is not None and hs >= a.DECOMPOSE_TH and hc:  # 「提示」对话框出现
-                print(f"[分解] 「提示」对话框出现（标题栏 {hs:.3f}），点击确认…")  # 打印日志
-                # 优先在对话框内实时检测确认按钮位置；检测不到则用实测坐标兜底
-                cs, cc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame))  # 检测确认按钮
-                if cs is not None and cs >= a.DECOMPOSE_TH and cc:  # 实时检测到确认按钮
-                    a.adb_tap(cc[0], cc[1])  # 点实时检测到的确认按钮
-                else:           # 检测不到 → 用实测坐标兜底
-                    a.adb_tap(a.DECOMPOSE_OUTER_CONFIRM[0], a.DECOMPOSE_OUTER_CONFIRM[1])  # 点实测外层确认坐标
+                print(f"[分解] 「提示」对话框出现（标题栏 {hs:.3f}），点击右下角确认按钮…")  # 打印日志
+                # 直接点右下角「确认」按钮实测坐标（不实时检测，避免误匹配到标题/文字区）
+                a.adb_tap(DECOMPOSE_HINT_CONFIRM[0], DECOMPOSE_HINT_CONFIRM[1])  # 点右下角确认按钮
                 outer_ok = True  # 标记已点外层确认
                 break           # 跳出检查循环
         print(f"[分解] 第 {i+1}/5 次未检测到「提示」对话框，2s 后再查…")  # 打印等待日志
