@@ -28,6 +28,8 @@ TITLE = "dnfm-auto 独立功能"   # 弹窗标题：msgbox 提示框的统一标
 DECOMPOSE_HINT_TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "template_decompose_hint.png")
 # 「提示」对话框右下角「确认」按钮在 2560x1440 下的实测坐标（截图模板匹配换算）
 DECOMPOSE_HINT_CONFIRM = (1503, 1157)
+# 高价值二次确认框「确认」按钮在 2560x1440 下的实测坐标（颜色分割定位上层金黄色按钮）
+DECOMPOSE_HIGHVALUE_CONFIRM = (1465, 900)
 
 
 def _decompose_back_to_town():
@@ -163,18 +165,11 @@ def _decompose_equip():
             if frame is not None:  # 画面有效
                 vs, vc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_HIGHVALUE, roi=a.decompose_popup_roi(frame))  # 中央检测高价值弹窗
                 if vs is not None and vs >= a.DECOMPOSE_TH and vc:  # 高价值二次确认出现
-                    print(f"[分解] 高价值二次确认出现（{vs:.3f}），等 2s 让对话框稳定后再检测确认按钮…")  # 打印日志
-                    time.sleep(2.0)  # 等 2s 让对话框完全弹出稳定（避免动画中误匹配到错误位置）
-                    frame2 = a.capture_hdmi()  # 重新截图
-                    if frame2 is None:  # 截图失败
-                        a.adb_tap(a.DECOMPOSE_INNER_CONFIRM[0], a.DECOMPOSE_INNER_CONFIRM[1])  # 兜底点固定坐标
-                    else:
-                        cs, cc = a.detect_button(frame2, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame2))  # 重新检测确认按钮
-                        print(f"[分解] 高价值框稳定后 confirm 分数={cs if cs is not None else 'None'}@{cc}")  # 调试
-                        if cs is not None and cs >= a.DECOMPOSE_TH and cc:  # 检测到确认按钮
-                            a.adb_tap(cc[0], cc[1])  # 点实时检测到的确认按钮
-                        else:           # 检测不到 → 用实测坐标兜底
-                            a.adb_tap(a.DECOMPOSE_INNER_CONFIRM[0], a.DECOMPOSE_INNER_CONFIRM[1])  # 点内层确认坐标
+                    print(f"[分解] 高价值二次确认出现（{vs:.3f}），等 2s 后点确认…")  # 打印日志
+                    time.sleep(2.0)  # 等 2s 让对话框完全弹出稳定
+                    # 直接点上层高价值框「确认」按钮实测坐标（下层第一个提示框的确认按钮还在画面上，
+                    # 模板匹配会误匹配到下层，所以不用 confirm 模板，直接用颜色分割定位的固定坐标）
+                    a.adb_tap(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1])  # 点(1465,900)
                     highvalue_ok = True  # 标记已点内层确认
                     break       # 跳出检查循环
                 rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 同时检测「获得道具」弹窗
