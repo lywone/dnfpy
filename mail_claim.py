@@ -91,6 +91,7 @@ def _decompose_equip():
 
     # 前置2：点「分解」按钮 → 检测分解弹框（分解标题栏，顶部中央 ROI）
     popup_opened = False        # 分解弹框是否已打开
+    clicked_btn = False         # 是否已点过「分解」入口按钮（点过就不再重复点，防误点已弹出的框）
     for i in range(a.DECOMPOSE_MAX_TRY):  # 最多 10 轮
         frame = a.capture_hdmi()  # 截取当前画面
         if frame is None:       # 截图失败
@@ -101,11 +102,16 @@ def _decompose_equip():
             print(f"[分解] 分解弹框已出现（标题栏 {ts:.3f}）")  # 打印日志
             popup_opened = True  # 标记已打开
             break               # 跳出循环
+        print(f"[分解] 第 {i+1} 轮 TITLE 分数={ts if ts is not None else 'None'}（阈值 {a.DECOMPOSE_TH}）")  # 调试：打印分数
+        if clicked_btn:         # 已经点过分解入口按钮 → 不再重复点，只等弹框出现
+            time.sleep(1.5)     # 等 1.5s 再查
+            continue            # 继续等
         ds, dc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_BTN, roi=a.decompose_btn_roi(frame))  # 检测「分解」按钮
         if ds is not None and ds >= a.DECOMPOSE_TH and dc:  # 匹配达标
-            print(f"[分解] 点击「分解」按钮（{ds:.3f}），1s 后检查弹框…")  # 打印日志
+            print(f"[分解] 点击「分解」按钮（{ds:.3f}），2s 后检查弹框…")  # 打印日志
             a.adb_tap(dc[0], dc[1])  # 点击分解按钮（打开分解弹框）
-            time.sleep(1.0)     # 等 1s
+            clicked_btn = True  # 标记已点过，后续不再重复点
+            time.sleep(2.0)     # 等 2s 让弹框完全加载
             continue            # 继续循环
         print(f"[分解] 未检测到「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
         time.sleep(1)           # 等 1s 再试
