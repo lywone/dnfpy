@@ -136,25 +136,23 @@ def _decompose_equip():
             break               # 已点中，进入等待确认阶段
         print(f"[分解] 未检测到金黄「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
         time.sleep(1)           # 等 1s 再试
-    # 等待 2s → 检查「提示」对话框（hint 标题栏模板），5 次 × 2s
-    # hint 模板在 2560x1440 下匹配分偏临界，单独用更低阈值（模板本身偏宽、背景渐变影响大）
-    HINT_TH = 0.50              # 「提示」标题栏匹配阈值（低于全局 0.60）
+    # 等待 2s → 检查第一个「提示」框的确认按钮（TEMPLATE_DECOMPOSE_CONFIRM），5 次 × 2s
+    # 不依赖 hint 标题模板（2560x1440 下匹配分仅 0.33），直接检测确认按钮：按钮出现=提示框已弹
     time.sleep(2.0)             # 点完分解先等 2s 让弹窗弹出
-    outer_ok = False            # 外层确认是否点到
+    outer_ok = False            # 第一个提示框确认是否点到
     for i in range(5):          # 最多检查 5 次
         frame = a.capture_hdmi()  # 截取当前画面
         if frame is not None:   # 画面有效
-            hs, hc = a.detect_button(frame, DECOMPOSE_HINT_TPL, roi=a.decompose_popup_roi(frame))  # 中央检测「提示」标题栏
-            print(f"[分解] 第 {i+1}/5 次 hint 分数={hs if hs is not None else 'None'}（阈值 {HINT_TH}）")  # 调试：打印分数
-            if hs is not None and hs >= HINT_TH and hc:  # 「提示」对话框出现
-                print(f"[分解] 「提示」对话框出现（标题栏 {hs:.3f}），点击右下角确认按钮…")  # 打印日志
-                # 直接点右下角「确认」按钮实测坐标（不实时检测，避免误匹配到标题/文字区）
-                a.adb_tap(DECOMPOSE_HINT_CONFIRM[0], DECOMPOSE_HINT_CONFIRM[1])  # 点右下角确认按钮
-                outer_ok = True  # 标记已点外层确认
+            cs, cc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame))  # 中央检测确认按钮
+            print(f"[分解] 第 {i+1}/5 次 confirm 分数={cs if cs is not None else 'None'}（阈值 {a.DECOMPOSE_TH}）@{cc}")  # 调试
+            if cs is not None and cs >= a.DECOMPOSE_TH and cc:  # 确认按钮出现
+                print(f"[分解] 第一个提示框确认按钮出现（{cs:.3f} @{cc}），点击…")  # 打印日志
+                a.adb_tap(cc[0], cc[1])  # 点实时检测到的确认按钮
+                outer_ok = True  # 标记已点
                 break           # 跳出检查循环
         time.sleep(2.0)         # 等 2s 再查
-    if not outer_ok:            # 5 次都没等到「提示」对话框
-        print("[分解] 5 次检查均未出现「提示」对话框，关闭分解流程，继续返回主页面…")  # 文字提示
+    if not outer_ok:            # 5 次都没等到
+        print("[分解] 5 次检查均未出现第一个提示框确认按钮，关闭分解流程，继续返回主页面…")  # 文字提示
 
     # 2) 点外层确认后 → 等 2s → 检查高价值二次确认（5 次 × 2s）
     highvalue_ok = False        # 高价值确认是否点到（True=有点到；False=未点到/未出现）
