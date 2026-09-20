@@ -24,6 +24,9 @@ import auto_run as a   # 引入 auto_run.py 的所有函数（截图/模板匹�
 
 TITLE = "dnfm-auto 独立功能"   # 弹窗标题：msgbox 提示框的统一标题
 
+# 「提示」对话框标题栏模板（templates/template_decompose_hint.png，点金黄分解后弹出）
+DECOMPOSE_HINT_TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "template_decompose_hint.png")
+
 
 def _decompose_back_to_town():
     """从分解/背包界面返回城镇主界面（点左上角返回箭头 + BACK 兜底）。"""
@@ -124,23 +127,27 @@ def _decompose_equip():
             break               # 已点中，进入等待确认阶段
         print(f"[分解] 未检测到金黄「分解」按钮（第 {i+1} 轮）…")  # 打印重试日志
         time.sleep(1)           # 等 1s 再试
-    # 等待 2s → 检查外层确认按钮，5 次 × 2s
+    # 等待 2s → 检查「提示」对话框（hint 标题栏模板），5 次 × 2s
     time.sleep(2.0)             # 点完分解先等 2s 让弹窗弹出
     outer_ok = False            # 外层确认是否点到
     for i in range(5):          # 最多检查 5 次
         frame = a.capture_hdmi()  # 截取当前画面
         if frame is not None:   # 画面有效
-            cs, cc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame))  # 中央检测「确认」
-            if (cs is not None and cs >= a.DECOMPOSE_TH and cc  # 确认按钮匹配达标
-                    and abs(cc[1] - a.DECOMPOSE_OUTER_CONFIRM[1]) < 60):  # 且 y 与实测外层确认接近（防误匹配）
-                print(f"[分解] 外层提示弹窗出现（{cs:.3f}），点击确认…")  # 打印日志
-                a.adb_tap(a.DECOMPOSE_OUTER_CONFIRM[0], a.DECOMPOSE_OUTER_CONFIRM[1])  # 点实测外层确认坐标
+            hs, hc = a.detect_button(frame, DECOMPOSE_HINT_TPL, roi=a.decompose_popup_roi(frame))  # 中央检测「提示」标题栏
+            if hs is not None and hs >= a.DECOMPOSE_TH and hc:  # 「提示」对话框出现
+                print(f"[分解] 「提示」对话框出现（标题栏 {hs:.3f}），点击确认…")  # 打印日志
+                # 优先在对话框内实时检测确认按钮位置；检测不到则用实测坐标兜底
+                cs, cc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_CONFIRM, roi=a.decompose_popup_roi(frame))  # 检测确认按钮
+                if cs is not None and cs >= a.DECOMPOSE_TH and cc:  # 实时检测到确认按钮
+                    a.adb_tap(cc[0], cc[1])  # 点实时检测到的确认按钮
+                else:           # 检测不到 → 用实测坐标兜底
+                    a.adb_tap(a.DECOMPOSE_OUTER_CONFIRM[0], a.DECOMPOSE_OUTER_CONFIRM[1])  # 点实测外层确认坐标
                 outer_ok = True  # 标记已点外层确认
                 break           # 跳出检查循环
-        print(f"[分解] 第 {i+1}/5 次未检测到外层确认，2s 后再查…")  # 打印等待日志
+        print(f"[分解] 第 {i+1}/5 次未检测到「提示」对话框，2s 后再查…")  # 打印等待日志
         time.sleep(2.0)         # 等 2s 再查
-    if not outer_ok:            # 5 次都没等到外层确认
-        print("[分解] 5 次检查均未出现外层确认弹窗，关闭分解流程，继续返回主页面…")  # 文字提示
+    if not outer_ok:            # 5 次都没等到「提示」对话框
+        print("[分解] 5 次检查均未出现「提示」对话框，关闭分解流程，继续返回主页面…")  # 文字提示
 
     # 2) 点外层确认后 → 等 2s → 检查高价值二次确认（5 次 × 2s）
     highvalue_ok = False        # 高价值确认是否点到（True=有点到；False=未点到/未出现）
