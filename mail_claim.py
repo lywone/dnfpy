@@ -29,7 +29,7 @@ DECOMPOSE_HINT_TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "t
 # 「提示」对话框右下角「确认」按钮在 2560x1440 下的实测坐标（截图模板匹配换算）
 DECOMPOSE_HINT_CONFIRM = (1503, 1157)
 # 高价值二次确认框「确认」按钮在 2560x1440 下的实测坐标（颜色分割定位上层金黄色按钮）
-DECOMPOSE_HIGHVALUE_CONFIRM = (1465, 900)
+DECOMPOSE_HIGHVALUE_CONFIRM = (1470, 922)
 
 
 def _decompose_back_to_town():
@@ -169,7 +169,7 @@ def _decompose_equip():
                     time.sleep(2.0)  # 等 2s 让对话框完全弹出稳定
                     # 直接点上层高价值框「确认」按钮实测坐标（下层第一个提示框的确认按钮还在画面上，
                     # 模板匹配会误匹配到下层，所以不用 confirm 模板，直接用颜色分割定位的固定坐标）
-                    a.adb_tap(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1])  # 点(1465,900)
+                    a.adb_tap(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1])  # 点(1470,922)
                     highvalue_ok = True  # 标记已点内层确认
                     break       # 跳出检查循环
                 rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 同时检测「获得道具」弹窗
