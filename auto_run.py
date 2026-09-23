@@ -182,7 +182,7 @@ WM_KEYUP = 0x0101           # Windows 消息：按键松开
 WM_MOUSEWHEEL = 0x020A      # Windows 消息：鼠标滚轮
 VK = {"right": 0x27, "up": 0x26, "down": 0x28, "left": 0x25, "f10": 0x79,  # 虚拟键码：方向键 + F10
       "q": 0x51, "w": 0x57, "e": 0x45, "r": 0x52, "t": 0x54,  # 技能键第一排 qwert
-      "a": 0x41, "s": 0x53, "d": 0x44, "f": 0x46, "g": 0x47}  # 技能键第二排 asdfg
+      "a": 0x41, "s": 0x53, "d": 0x44, "f": 0x46, "g": 0x47, "x": 0x58}  # 技能键第二排 asdfg + x
 
 
 def ensure_admin():
@@ -637,19 +637,17 @@ def confirm_button(frame, template_path, label, roi=None):
 
 
 # ---------------- 跑图技能 ----------------
-SKILL_KEYS = ["q", "w", "e", "r", "t", "a", "s", "d", "f", "g"]  # 技能键位（qwert asdfg）
-SKILL_INTERVAL = 4.0            # 技能释放间隔（秒）：跑图时每 4s 随机放一次
+SKILL_KEYS = ["q", "w", "e", "r", "t", "a", "s", "d", "f", "g", "x"]  # 技能键位（qwert asdfg + x）
+SKILL_INTERVAL = 2.0            # 技能释放间隔（秒）：跑图/检测阶段每 2s 随机放一次
 
 
 def cast_skill(hwnd):
-    """随机选 2 个技能键，依次短按释放（PostMessage 直发，无需窗口前台）"""
-    keys = random.sample(SKILL_KEYS, 2)  # 随机不重复选 2 个技能键
-    print(f"[技能] 释放技能：{' + '.join(k.upper() for k in keys)}")  # 打印本次技能按键
-    for k in keys:              # 依次按下每个技能键
-        send_key(hwnd, VK[k], True)     # 按下
-        time.sleep(0.12)                # 短按保持（120ms）
-        send_key(hwnd, VK[k], False)    # 松开
-        time.sleep(0.15)                # 键间间隔（150ms）
+    """随机选 1 个技能键，短按释放（PostMessage 直发，无需窗口前台）"""
+    k = random.choice(SKILL_KEYS)  # 随机选 1 个技能键
+    print(f"[技能] 释放技能：{k.upper()}")  # 打印本次技能按键
+    send_key(hwnd, VK[k], True)     # 按下
+    time.sleep(0.12)                # 短按保持（120ms）
+    send_key(hwnd, VK[k], False)    # 松开
 
 
 # ---------------- 三个阶段 ----------------
@@ -697,6 +695,14 @@ def stage2_wait_challenge(hwnd):
     返回 "challenge"（再次挑战）/ "reward"（领奖结算）/ "restart"（超时未检测到，重新跑图）"""
     n = 0                       # 连续截图失败计数
     t_start = time.time()       # 记录本阶段检测开始时间（用于 3 分钟超时判断）
+    last_cast = time.time() - SKILL_INTERVAL  # 上次技能时间（进入检测阶段先放一次）
+
+    def check_cast():           # 内部函数：到间隔则随机释放一次技能（1 键）
+        if time.time() - last_cast >= SKILL_INTERVAL:  # 距上次释放已满 2s
+            cast_skill(hwnd)    # 随机释放技能
+            return time.time()  # 返回本次释放时刻
+        return last_cast        # 未到间隔，保持原时间
+
     while True:                 # 无限循环直到检测到按钮
         if time.time() - t_start > STAGE2_TIMEOUT:  # 超过 3 分钟仍未检测到任何按钮
             print(f"[检测] 超过 {STAGE2_TIMEOUT:.0f}s 未检测到「再次挑战」/「领奖结算」，提示音后重新跑图…")  # 打印超时日志
@@ -718,7 +724,9 @@ def stage2_wait_challenge(hwnd):
                 print(f"[检测] 发现「领奖结算」（相似度 {rs:.3f}），复查「再次挑战」…")  # 打印复查日志
                 recheck_hit = False  # 复查是否发现「再次挑战」
                 for _ in range(RECHECK_ROUNDS):  # 复查最多 RECHECK_ROUNDS=10 次（画面动态变化，需等按钮稳定）
-                    time.sleep(RECHECK_WAIT)  # 间隔 RECHECK_WAIT=2s 再查
+                    for _ in range(int(RECHECK_WAIT / 0.5)):  # 等待拆 0.5s 小段
+                        time.sleep(0.5)                        # 每次等 0.5s
+                        last_cast = check_cast()               # 期间每 2s 随机放一次技能
                     frame2 = capture_hdmi()  # 重新截取画面
                     if frame2 is None:  # 截图失败
                         continue       # 继续下一次复查
@@ -735,7 +743,11 @@ def stage2_wait_challenge(hwnd):
             n += 1              # 失败计数 +1
             if n >= SHOT_FAIL_LIMIT:  # 连续失败达到上限
                 raise RuntimeError(f"连续 {SHOT_FAIL_LIMIT} 次截图失败，可能模拟器/ADB 断开")  # 抛出异常终止
-        hold_key(hwnd, VK["right"], MOVE_STEP)  # 继续前进 2 秒
+        send_key(hwnd, VK["right"], True)  # 按住 →（前进）
+        for _ in range(int(MOVE_STEP / 0.5)):  # 前进 2s 拆 0.5s 小段（期间持续按住前进并放技能）
+            time.sleep(0.5)                        # 每段前进 0.5s
+            last_cast = check_cast()               # 每段检查技能间隔（每 2s 随机放一次）
+        send_key(hwnd, VK["right"], False)  # 松开 →（结束前进）
         print(f"[检测] 未发现「再次挑战」/「领奖结算」，前进 {MOVE_STEP}s 后重试…")  # 打印重试日志
 
 
