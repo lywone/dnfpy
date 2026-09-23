@@ -158,6 +158,9 @@ def beep(ok=True):
 
 def msgbox(text, title="dnfm-auto 挂机"):
     """弹窗（Windows 专属，失败降级为打印）"""
+    if os.environ.get("DNFM_NO_FOREGROUND") == "1":  # 不抢焦点模式：弹消息框会抢焦点，改为只打印
+        print(f"\n>>> {title}: {text}（DNFM_NO_FOREGROUND=1，已跳过弹窗）")  # 打印提示信息不丢失
+        return                 # 不弹窗直接返回
     try:                       # 尝试弹窗（可能未安装 pymsgbox 库）
         import pymsgbox        # 弹窗库（第三方，随工程安装）
         pymsgbox.alert(text, title)  # 弹出阻塞式提示框，等待用户点确定
