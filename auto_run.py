@@ -374,10 +374,10 @@ def probe_display():
             img = cv2.imread(probe)  # 用 OpenCV 读取截图
             if img is None or img.std() < 5:   # 读失败或画面标准差<5（黑屏）
                 continue        # 黑屏/坏图跳过，尝试下一个
-            DISPLAY_ID = d      # 该 display 能截到有效画面 → 记录
+            DISPLAY_ID = str(d)  # 该 display 能截到有效画面 → 记录（保持字符串，下游 subprocess 需要）
             print(f"[adb] 游戏 display 已探测：{d}"  # 打印探测结果
                   f"（画面 {img.shape[1]}x{img.shape[0]}）")  # 附画面宽高
-            return d            # 返回该 display 编号
+            return str(d)       # 返回该 display 编号（字符串）
         except Exception:       # 任何异常（超时/IO 错误）
             continue            # 尝试下一个
         finally:                # 每轮探测结束后检查进度
