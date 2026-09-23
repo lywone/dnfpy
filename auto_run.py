@@ -39,7 +39,7 @@ TITLE_KEY = "地下城"                 # 游戏窗口标题关键词（用于 E
 # 模拟器重启后 adb 设备名/display 编号都会变，启动时自动探测：
 ADB_DEVICE = None                    # 探测结果：如 "emulator-5554"（None=尚未探测）
 DISPLAY_ID = None                    # 探测结果：如 "2"（None=尚未探测/用默认）
-DISPLAY_CANDIDATES = ["5", "2", "0", "3", "1", None]  # 优先尝试的 display 顺序（实测本机游戏画面在 display 5，其次常用 2）
+DISPLAY_CANDIDATES = range(1, 101)  # display 探测范围：模拟器游戏屏编号不固定（实测本机为 5），启动时从 1 依次查到 100
 TMP_REMOTE = "/sdcard/_dnfm_shot.png"  # 游戏画面先截图保存到安卓设备的这个路径
 TMP_LOCAL = os.path.join(tempfile.gettempdir(), "_dnfm_shot.png")  # 再从设备 pull 到本机临时路径
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")  # 配置文件（记录窗口尺寸）
@@ -356,25 +356,29 @@ def probe_display():
     global DISPLAY_ID           # 声明修改全局 display 编号（探测结果缓存）
     base = adb_base()           # 获取 adb 命令前缀
     probe = os.path.join(tempfile.gettempdir(), "_dnfm_probe.png")  # 探测截图的本机暂存路径
-    for d in DISPLAY_CANDIDATES:  # 按优先级逐个尝试候选 display
-        cmd = base + ["shell", "screencap"] + (["-d", d] if d else []) + ["-p", TMP_REMOTE]  # 构造截屏命令（-d 指定 display）
+    for d in DISPLAY_CANDIDATES:  # 依次探测 display 1..100（编号不固定，全量兼容）
+        cmd = base + ["shell", "screencap", "-d", str(d), "-p", TMP_REMOTE]  # 构造截屏命令（-d 指定 display）
         try:                    # 尝试执行截屏
-            r = subprocess.run(cmd, capture_output=True, timeout=60)  # 执行截屏命令
+            r = subprocess.run(cmd, capture_output=True, timeout=30)  # 执行截屏命令
             if r.returncode != 0:  # 截屏命令失败（该 display 不存在）
-                continue        # 尝试下一个候选
+                continue        # 尝试下一个
             subprocess.run(base + ["pull", TMP_REMOTE, probe],  # 把设备上的截图拉到本机
-                           capture_output=True, timeout=60)
+                           capture_output=True, timeout=30)
             img = cv2.imread(probe)  # 用 OpenCV 读取截图
             if img is None or img.std() < 5:   # 读失败或画面标准差<5（黑屏）
                 continue        # 黑屏/坏图跳过，尝试下一个
             DISPLAY_ID = d      # 该 display 能截到有效画面 → 记录
-            print(f"[adb] 游戏 display 已探测：{d or '默认'}"  # 打印探测结果
+            print(f"[adb] 游戏 display 已探测：{d}"  # 打印探测结果
                   f"（画面 {img.shape[1]}x{img.shape[0]}）")  # 附画面宽高
             return d            # 返回该 display 编号
         except Exception:       # 任何异常（超时/IO 错误）
-            continue            # 尝试下一个候选
-    DISPLAY_ID = None           # 全部候选都失败 → 置空
-    print("[adb] 未探测到游戏画面 display，将使用默认截图")  # 打印提示（可能游戏未运行）
+            continue            # 尝试下一个
+        finally:                # 每轮探测结束后检查进度
+            if d == 10:         # 已探测到 display 10 仍未找到 → 提示音告知，继续向后查
+                beep(True)      # 播放提示音（提醒用户：仍在查找游戏画面）
+                print("[adb] 探测至 display 10 仍未找到游戏画面，继续查找至 100…")  # 打印进度提示
+    DISPLAY_ID = None           # 1..100 全部探测失败 → 置空
+    print("[adb] display 1-100 均无游戏画面，将使用默认截图")  # 打印提示（可能游戏未运行）
     return None                 # 返回 None 表示用默认 display
 
 
