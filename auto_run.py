@@ -1608,7 +1608,6 @@ def main():
     print(f"  模板：{TEMPLATE_PATH}")  # 打印模板路径
     print("  运行中…（Ctrl+C 停止）")  # 打印运行提示
     print("=" * 50)             # 打印结尾分隔线
-    beep(True)                  # 启动提示音
 
     try:                        # 尝试查找游戏窗口
         hwnd = find_game_window()  # 按标题找窗口
