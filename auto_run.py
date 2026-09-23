@@ -156,10 +156,15 @@ def beep(ok=True):
         pass                   # 静默忽略，不影响主流程
 
 
+def no_foreground():
+    """是否启用不抢焦点模式：默认开启；DNFM_NO_FOREGROUND=0 时恢复抢焦点（旧行为）"""
+    return os.environ.get("DNFM_NO_FOREGROUND") != "0"  # 只有显式设 0 才关闭
+
+
 def msgbox(text, title="dnfm-auto 挂机"):
     """弹窗（Windows 专属，失败降级为打印）"""
-    if os.environ.get("DNFM_NO_FOREGROUND") == "1":  # 不抢焦点模式：弹消息框会抢焦点，改为只打印
-        print(f"\n>>> {title}: {text}（DNFM_NO_FOREGROUND=1，已跳过弹窗）")  # 打印提示信息不丢失
+    if no_foreground():        # 默认不抢焦点模式：弹消息框会抢焦点，改为只打印
+        print(f"\n>>> {title}: {text}（不抢焦点模式，已跳过弹窗）")  # 打印提示信息不丢失
         return                 # 不弹窗直接返回
     try:                       # 尝试弹窗（可能未安装 pymsgbox 库）
         import pymsgbox        # 弹窗库（第三方，随工程安装）
@@ -201,9 +206,9 @@ def ensure_admin():
 
 def force_foreground(hwnd):
     """强制把游戏窗口置为前台（绕过 Windows 的前台锁定限制）"""
-    # 可选开关：DNFM_NO_FOREGROUND=1 时跳过置前（用户在用其他应用时避免游戏窗口抢焦点）
-    if os.environ.get("DNFM_NO_FOREGROUND") == "1":
-        print("[前台] DNFM_NO_FOREGROUND=1，跳过强制置前（不抢焦点）")  # 打印提示
+    # 默认不抢焦点：跳过置前（用户在用其他应用时避免游戏窗口抢焦点；DNFM_NO_FOREGROUND=0 可恢复）
+    if no_foreground():
+        print("[前台] 不抢焦点模式：跳过强制置前（设 DNFM_NO_FOREGROUND=0 可恢复）")  # 打印提示
         return False           # 跳过置前
     user32, ctypes = _win_user32()  # 获取 user32 API 和 ctypes 模块
     kernel32 = ctypes.windll.kernel32  # 获取 kernel32 API（查线程 ID 用）
@@ -298,8 +303,8 @@ def press_esc():
             print("[按键] 活动弹窗已关闭或未出现")  # 打印结果
             return                       # 结束
         print(f"[按键] 检测到活动弹窗（相似度 {score:.3f}），第 {i+1} 次按 ESC…")  # 打印按键日志
-        if os.environ.get("DNFM_NO_FOREGROUND") == "1":  # 置前被禁用
-            print("[按键] 已禁用置前（DNFM_NO_FOREGROUND=1），跳过 ESC（避免误发到当前应用），弹窗留待后续处理")  # 提示并结束
+        if no_foreground():  # 默认不抢焦点模式
+            print("[按键] 不抢焦点模式：跳过 ESC（避免误发到当前应用），弹窗留待后续处理")  # 提示并结束
             return                       # 结束（不抢焦点、不发键）
         force_foreground(hwnd)           # 强制把游戏窗口置为前台（Qt 窗口激活后才接收键盘）
         time.sleep(0.3)                  # 等 0.3s 让窗口完成激活
