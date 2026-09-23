@@ -39,7 +39,7 @@ TITLE_KEY = "地下城"                 # 游戏窗口标题关键词（用于 E
 # 模拟器重启后 adb 设备名/display 编号都会变，启动时自动探测：
 ADB_DEVICE = None                    # 探测结果：如 "emulator-5554"（None=尚未探测）
 DISPLAY_ID = None                    # 探测结果：如 "2"（None=尚未探测/用默认）
-DISPLAY_CANDIDATES = ["2", "0", "3", "1", None]  # 优先尝试的 display 顺序（先试常用的 2）
+DISPLAY_CANDIDATES = ["5", "2", "0", "3", "1", None]  # 优先尝试的 display 顺序（实测本机游戏画面在 display 5，其次常用 2）
 TMP_REMOTE = "/sdcard/_dnfm_shot.png"  # 游戏画面先截图保存到安卓设备的这个路径
 TMP_LOCAL = os.path.join(tempfile.gettempdir(), "_dnfm_shot.png")  # 再从设备 pull 到本机临时路径
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")  # 配置文件（记录窗口尺寸）
