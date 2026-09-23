@@ -33,6 +33,7 @@ import tempfile    # 临时目录：截图暂存文件放到系统临时目录
 import cv2         # OpenCV：截图读取、模板匹配（matchTemplate）、颜色判断
 import numpy as np  # 数值计算：合成自测画面、图像数组运算
 import json        # 配置读写：config.json 保存窗口尺寸等持久化设置
+import random      # 随机选技能键：跑图时随机释放 2 个技能
 
 # ---------------- 配置 ----------------
 TITLE_KEY = "地下城"                 # 游戏窗口标题关键词（用于 EnumWindows 找窗口）
@@ -179,7 +180,9 @@ def msgbox(text, title="dnfm-auto 挂机"):
 WM_KEYDOWN = 0x0100        # Windows 消息：按键按下
 WM_KEYUP = 0x0101           # Windows 消息：按键松开
 WM_MOUSEWHEEL = 0x020A      # Windows 消息：鼠标滚轮
-VK = {"right": 0x27, "up": 0x26, "down": 0x28, "left": 0x25, "f10": 0x79}  # 虚拟键码：→=0x27 ↑=0x26 ↓=0x28 ←=0x25 F10=0x79
+VK = {"right": 0x27, "up": 0x26, "down": 0x28, "left": 0x25, "f10": 0x79,  # 虚拟键码：方向键 + F10
+      "q": 0x51, "w": 0x57, "e": 0x45, "r": 0x52, "t": 0x54,  # 技能键第一排 qwert
+      "a": 0x41, "s": 0x53, "d": 0x44, "f": 0x46, "g": 0x47}  # 技能键第二排 asdfg
 
 
 def ensure_admin():
@@ -633,26 +636,56 @@ def confirm_button(frame, template_path, label, roi=None):
     return None, None           # 两次不一致 → 视为误匹配
 
 
+# ---------------- 跑图技能 ----------------
+SKILL_KEYS = ["q", "w", "e", "r", "t", "a", "s", "d", "f", "g"]  # 技能键位（qwert asdfg）
+SKILL_INTERVAL = 4.0            # 技能释放间隔（秒）：跑图时每 4s 随机放一次
+
+
+def cast_skill(hwnd):
+    """随机选 2 个技能键，依次短按释放（PostMessage 直发，无需窗口前台）"""
+    keys = random.sample(SKILL_KEYS, 2)  # 随机不重复选 2 个技能键
+    print(f"[技能] 释放技能：{' + '.join(k.upper() for k in keys)}")  # 打印本次技能按键
+    for k in keys:              # 依次按下每个技能键
+        send_key(hwnd, VK[k], True)     # 按下
+        time.sleep(0.12)                # 短按保持（120ms）
+        send_key(hwnd, VK[k], False)    # 松开
+        time.sleep(0.15)                # 键间间隔（150ms）
+
+
 # ---------------- 三个阶段 ----------------
 def stage1_forward(hwnd):
     """阶段1：循环执行「后退0.2s → 前进2s → 斜上(→+↑)0.5s → 斜下(→+↓)1.0s」，
     累计 ROUND_SECONDS=22s 后结束（之后进入阶段2检测）。"""
     t0 = time.time()            # 记录开始时间
+    last_cast = t0 - SKILL_INTERVAL  # 上次技能时间（首轮即满足间隔，进入跑图先放一次技能）
+
+    def check_cast():           # 内部函数：到间隔则随机释放一次技能（2 键）
+        if time.time() - last_cast >= SKILL_INTERVAL:  # 距上次释放已满 4s
+            cast_skill(hwnd)    # 随机释放技能
+            return time.time()  # 返回本次释放时刻
+        return last_cast        # 未到间隔，保持原时间
+
     while time.time() - t0 < ROUND_SECONDS:  # 未跑满 22s 就继续循环
+        last_cast = check_cast()  # 进入本轮先检查技能间隔（跑图开始即放一次）
         # 1) 先向后跑 BACK_STEP 秒（← 后退一小段，避免贴墙/卡点）
         send_key(hwnd, VK["left"], True)   # 按住 ←（向后跑）
         time.sleep(BACK_STEP)              # 持续 0.2s
+        last_cast = check_cast()           # 分段检查技能间隔
         send_key(hwnd, VK["left"], False)  # 松开 ←
-        # 2) 再向前直跑 FWD_STEP 秒（按住 →）
+        # 2) 再向前直跑 FWD_STEP 秒（按住 →，拆 0.5s 段以保 4s 技能节奏）
         send_key(hwnd, VK["right"], True)  # 按住 →（开始前进）
-        time.sleep(FWD_STEP)               # 持续 2s
+        for _ in range(int(FWD_STEP / 0.5)):  # 把前进 2s 拆成 0.5s 小段
+            time.sleep(0.5)                # 持续 0.5s
+            last_cast = check_cast()       # 每 0.5s 检查一次技能间隔
         # 3) 同时按住 ↑ + → 斜上跑 DIAG_UP_STEP 秒（→ 保持按住）
         send_key(hwnd, VK["up"], True)     # 按住 ↑
         time.sleep(DIAG_UP_STEP)           # 持续 0.5s
+        last_cast = check_cast()           # 分段检查技能间隔
         send_key(hwnd, VK["up"], False)    # 松开 ↑
         # 4) 同时按住 ↓ + → 斜下跑 DIAG_DOWN_STEP 秒（→ 保持按住）
         send_key(hwnd, VK["down"], True)   # 按住 ↓
         time.sleep(DIAG_DOWN_STEP)         # 持续 1.0s
+        last_cast = check_cast()           # 分段检查技能间隔
         send_key(hwnd, VK["down"], False)  # 松开 ↓
         send_key(hwnd, VK["right"], False)  # 松开 →（结束本轮前进）
     print(f"[跑图] 完成一轮（{ROUND_SECONDS:.0f}s：退0.2→进2→斜上0.5→斜下1.0 循环）")  # 打印跑图完成日志
