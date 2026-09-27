@@ -753,17 +753,18 @@ def stage2_wait_challenge(hwnd):
 
 def adb_tap(x, y):
     """adb 触摸点击游戏画面坐标。
-    触摸注入优先默认 display（实测模拟器 -d 指定层触摸不可靠：返回 0 但无效果）；
-    默认层失败时再带 DISPLAY_ID 兜底。截图仍用 DISPLAY_ID（画面层）。"""
+    实测：tap 必须带 -d 指定 display 才有效（不带 -d 时坐标按默认黑屏解释，
+    邮箱/分解等点击全部失效）；swipe 则相反必须不带 -d。故 tap 带 -d 优先，
+    失败时再兜底不带 -d。"""
     base = adb_base()           # 获取 adb 命令前缀
     args = [str(int(x)), str(int(y))]  # 点击坐标参数（转字符串）
-    r = subprocess.run(base + ["shell", "input", "tap"] + args,  # 默认层点击（优先）
-                       capture_output=True, timeout=30)
-    if r.returncode == 0:       # 默认层点击成功
-        return                  # 直接返回
-    if DISPLAY_ID is not None:  # 默认层失败 → 带 display 兜底
-        subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "tap"] + args,  # 带 -d 指定 display 点击
-                       capture_output=True, timeout=30)
+    if DISPLAY_ID is not None:  # 已探测到 display
+        r = subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "tap"] + args,  # 带 -d 指定 display 点击
+                           capture_output=True, timeout=30)
+        if r.returncode == 0:   # 点击成功
+            return              # 直接返回
+    subprocess.run(base + ["shell", "input", "tap"] + args,  # 兜底：不带 display 点击
+                   capture_output=True, timeout=30)
 
 
 def adb_back():
