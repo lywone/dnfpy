@@ -753,16 +753,17 @@ def stage2_wait_challenge(hwnd):
 
 def adb_tap(x, y):
     """adb 触摸点击游戏画面坐标。
-    优先显式指定 display（与截图同一屏，防模拟器 display 漂移导致点错屏）"""
+    触摸注入优先默认 display（实测模拟器 -d 指定层触摸不可靠：返回 0 但无效果）；
+    默认层失败时再带 DISPLAY_ID 兜底。截图仍用 DISPLAY_ID（画面层）。"""
     base = adb_base()           # 获取 adb 命令前缀
     args = [str(int(x)), str(int(y))]  # 点击坐标参数（转字符串）
-    if DISPLAY_ID is not None:  # 已探测到 display
-        r = subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "tap"] + args,  # 带 -d 指定 display 点击
-                           capture_output=True, timeout=30)
-        if r.returncode == 0:   # 点击成功
-            return              # 直接返回
-    subprocess.run(base + ["shell", "input", "tap"] + args,  # 兜底：不带 display 点击
-                   capture_output=True, timeout=30)
+    r = subprocess.run(base + ["shell", "input", "tap"] + args,  # 默认层点击（优先）
+                       capture_output=True, timeout=30)
+    if r.returncode == 0:       # 默认层点击成功
+        return                  # 直接返回
+    if DISPLAY_ID is not None:  # 默认层失败 → 带 display 兜底
+        subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "tap"] + args,  # 带 -d 指定 display 点击
+                       capture_output=True, timeout=30)
 
 
 def adb_back():
@@ -774,16 +775,17 @@ def adb_back():
 
 def adb_swipe(x1, y1, x2, y2, duration_ms=300):
     """adb 触摸滑动（模拟手指滚动）。
-    x1,y1 -> x2,y2：向下滑(y2>y1)=列表向上滚（看顶部）；向上滑(y2<y1)=列表向下滚（看下面）"""
+    x1,y1 -> x2,y2：向下滑(y2>y1)=列表向上滚（看顶部）；向上滑(y2<y1)=列表向下滚（看下面）。
+    触摸注入优先默认 display（实测 -d 指定层滑动返回 0 但列表不动）；失败再带 -d 兜底。"""
     base = adb_base()           # 获取 adb 命令前缀
     args = [str(int(x1)), str(int(y1)), str(int(x2)), str(int(y2)), str(int(duration_ms))]  # 滑动起终点+时长参数
-    if DISPLAY_ID is not None:  # 已探测到 display
-        r = subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "swipe"] + args,  # 带 display 滑动
-                           capture_output=True, timeout=30)
-        if r.returncode == 0:   # 滑动成功
-            return              # 直接返回
-    subprocess.run(base + ["shell", "input", "swipe"] + args,  # 兜底：不带 display 滑动
-                   capture_output=True, timeout=30)
+    r = subprocess.run(base + ["shell", "input", "swipe"] + args,  # 默认层滑动（优先）
+                       capture_output=True, timeout=30)
+    if r.returncode == 0:       # 默认层滑动成功
+        return                  # 直接返回
+    if DISPLAY_ID is not None:  # 默认层失败 → 带 display 兜底
+        subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "swipe"] + args,  # 带 display 滑动
+                       capture_output=True, timeout=30)
 
 
 def adb_roll(dx=0, dy=10):
@@ -791,11 +793,10 @@ def adb_roll(dx=0, dy=10):
     对挑战进度面板/角色列表有效。"""
     base = adb_base()           # 获取 adb 命令前缀
     args = [str(int(dx)), str(int(dy))]  # 滚动方向参数
-    if DISPLAY_ID is not None:  # 已探测到 display
-        subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "roll"] + args,  # 带 display 滚动
+    r = subprocess.run(base + ["shell", "input", "roll"] + args,  # 默认层滚动（优先）
                        capture_output=True, timeout=30)
-    else:                       # 未探测到 display
-        subprocess.run(base + ["shell", "input", "roll"] + args,  # 不带 display 滚动
+    if r.returncode != 0 and DISPLAY_ID is not None:  # 默认层失败 → 带 display 兜底
+        subprocess.run(base + ["shell", "input", "-d", DISPLAY_ID, "roll"] + args,  # 带 display 滚动
                        capture_output=True, timeout=30)
 
 
