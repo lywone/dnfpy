@@ -213,6 +213,13 @@ def force_foreground(hwnd):
     if no_foreground():
         print("[前台] 不抢焦点模式：跳过强制置前（设 DNFM_NO_FOREGROUND=0 可恢复）")  # 打印提示
         return False           # 跳过置前
+    return _force_foreground_impl(hwnd)  # 执行置前核心逻辑
+
+
+def _force_foreground_impl(hwnd):
+    """置前核心实现（不检查不抢焦点开关）：
+    附加输入线程绕过前台锁 + ShowWindow + BringWindowToTop + SetForegroundWindow。
+    供 force_foreground 与 mouse_drag（真实鼠标拖动必须前台）使用。"""
     user32, ctypes = _win_user32()  # 获取 user32 API 和 ctypes 模块
     kernel32 = ctypes.windll.kernel32  # 获取 kernel32 API（查线程 ID 用）
     cur = kernel32.GetCurrentThreadId()  # 当前进程的线程 ID
@@ -229,6 +236,7 @@ def force_foreground(hwnd):
         user32.ShowWindow(hwnd, 5)  # SW_SHOW：显示窗口（最小化时恢复）
         user32.BringWindowToTop(hwnd)  # 把窗口带到最上层
         user32.SetForegroundWindow(hwnd)  # 强制设为前台窗口（配合附加线程输入可成功）
+        return True              # 置前成功
     finally:                     # 无论成功失败都要恢复
         if attached:             # 若之前附加了输入线程
             user32.AttachThreadInput(cur, fg_thread, False)  # 解除附加，避免影响其他窗口
@@ -801,6 +809,56 @@ def adb_roll(dx=0, dy=10):
                        capture_output=True, timeout=30)
 
 
+def mouse_drag(x1, y1, x2, y2, duration_ms=1500):
+    """真实鼠标拖动游戏画面坐标（模拟手指滑动滚动列表）。
+    背景：实测模拟器 adb input swipe/roll、PostMessage 滚轮对切角面板列表全部失效
+    （截图 diff≈0.02 不滚动）；只有真实鼠标拖动有效（模拟器窗口接收真实鼠标转安卓触摸）。
+    需要：管理员进程（脚本已 ensure_admin 提权）+ 游戏窗口置前。
+    焦点处理：拖动期间临时置前游戏窗口，结束后恢复用户原前台窗口（不长时间抢焦点）。
+    方向：y2<y1 向上拖 = 看列表底部；y2>y1 向下拖 = 看列表顶部。"""
+    hwnd = find_game_window()            # 查找游戏窗口句柄
+    if hwnd is None:                     # 找不到游戏窗口
+        print("[拖动] 未找到游戏窗口，无法拖动")  # 打印提示
+        return False                     # 返回失败
+    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes
+    import ctypes.wintypes               # 显式导入 wintypes（POINT 结构）
+    frame = capture_hdmi()               # 截取当前画面（拿 HDMI 实际尺寸做换算）
+    if frame is None:                    # 截图失败
+        print("[拖动] 无法截图，取消拖动")  # 打印提示
+        return False                     # 返回失败
+    fw, fh = frame.shape[1], frame.shape[0]  # HDMI 画面宽高
+    cw, ch = get_client_size(hwnd)       # 窗口客户区尺寸
+    if not cw or not ch:                 # 客户区获取失败
+        print("[拖动] 无法获取窗口客户区，取消拖动")  # 打印提示
+        return False                     # 返回失败
+    prev_fg = user32.GetForegroundWindow()  # 记录原前台窗口（拖动后恢复）
+    _force_foreground_impl(hwnd)         # 置前（拖动必须前台，绕过不抢焦点开关）
+    time.sleep(0.3)                      # 等 0.3s 让窗口激活
+    try:                                 # 执行拖动（异常也要恢复焦点）
+        pt = ctypes.wintypes.POINT(0, 0)     # 客户区原点结构
+        user32.ClientToScreen(hwnd, ctypes.byref(pt))  # 客户区原点 → 屏幕坐标
+        sx1, sy1 = pt.x + int(x1 * cw / fw), pt.y + int(y1 * ch / fh)  # 起点屏幕坐标
+        sx2, sy2 = pt.x + int(x2 * cw / fw), pt.y + int(y2 * ch / fh)  # 终点屏幕坐标
+        user32.SetCursorPos(sx1, sy1)    # 移动鼠标到起点
+        time.sleep(0.25)                 # 等 0.25s 让鼠标就位
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN 按下左键
+        steps = max(5, int(duration_ms / 100))  # 分步数（每步≤100ms，形成平滑拖动）
+        for i in range(1, steps + 1):    # 分步移动到终点
+            t = i / steps                # 当前步比例
+            user32.SetCursorPos(int(sx1 + (sx2 - sx1) * t),  # 中间点 x
+                                int(sy1 + (sy2 - sy1) * t))  # 中间点 y
+            time.sleep(duration_ms / 1000.0 / steps)         # 每步间隔
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP 松开左键
+        print(f"[拖动] ({x1},{y1})->({x2},{y2}) 屏幕 ({sx1},{sy1})->({sx2},{sy2})")  # 打印拖动日志
+        return True                      # 返回成功
+    finally:                             # 无论成败都要恢复焦点
+        if prev_fg and prev_fg != hwnd:  # 原前台窗口有效且不是游戏窗口
+            try:                         # 尝试恢复
+                user32.SetForegroundWindow(prev_fg)  # 焦点还给用户原窗口
+            except Exception:            # 恢复失败（窗口已关闭等）
+                pass                     # 忽略，不影响主流程
+
+
 def mouse_click(x, y):
     """真实鼠标点击游戏画面坐标（HDMI 像素坐标）。
     背景：adb tap 对模拟器 display 2 已失效（HDMI 断后恢复触摸注入坏）；
@@ -1180,7 +1238,7 @@ def char_switch():
         frame = capture_hdmi()  # 截取当前画面
         if frame is not None and _try_refresh_row(frame):  # 截图成功且成功开始游戏
             return True         # 返回成功
-        adb_swipe(600, 750, 600, 300, CHAR_DRAG_MS)  # 从下往上慢拖 3s（看列表底部）
+        mouse_drag(600, 750, 600, 300, CHAR_DRAG_MS)  # 真实鼠标从下往上拖（看列表底部）
         time.sleep(1.0)         # 停 1s 再检测
     # 4) 30s 底部无可刷新 → 往上滚（最长 60s），边滚边找
     print(f"[选角] 底部未发现「可刷新」，往上滚找（最长 {CHAR_SCROLL_UP_SECONDS:.0f}s）…")  # 打印开始日志
@@ -1189,7 +1247,7 @@ def char_switch():
         frame = capture_hdmi()  # 截取当前画面
         if frame is not None and _try_refresh_row(frame):  # 截图成功且成功开始游戏
             return True         # 返回成功
-        adb_swipe(600, 300, 600, 750, CHAR_DRAG_MS)  # 从上往下慢拖 3s（看列表顶部）
+        mouse_drag(600, 300, 600, 750, CHAR_DRAG_MS)  # 真实鼠标从上往下拖（看列表顶部）
         time.sleep(1.0)         # 停 1s 再检测
     # 5) 60s 仍无可刷新 → 退出到主页面 → 退出脚本
     print("[选角] 往上滚仍未发现「可刷新」，退出到主页面…")  # 打印退出日志
