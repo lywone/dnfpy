@@ -1057,9 +1057,9 @@ def mail_claim():
         ms, mc = detect_button(frame, TEMPLATE_MAIL,
                                roi=(0, int(h * 0.82), w, h))  # 只在画面底部 82%-100% 搜索
         if ms is not None and ms >= MAIL_TH and mc:  # 匹配达标
-            print(f"[邮箱] 点击「邮箱」图标（相似度 {ms:.3f}，坐标 {mc}），2s 后查领取…")  # 打印日志
+            print(f"[邮箱] 点击「邮箱」图标（相似度 {ms:.3f}，坐标 {mc}），5s 后查领取…")  # 打印日志
             adb_tap(mc[0], mc[1])  # 点击邮箱图标（打开邮箱界面）
-            time.sleep(2.0)     # 等 2s 让邮箱界面打开
+            time.sleep(5.0)     # 等 5s 让邮箱界面打开（用户要求延迟长点，防领取检测失败）
             continue            # 继续循环（下次检测领取按钮）
         print(f"[邮箱] 未检测到邮箱图标，2s 后重试…")  # 打印重试日志
         time.sleep(2)           # 等 2s 再试
@@ -1229,19 +1229,26 @@ def char_switch():
             return False        # 返回未变黄（外层继续滚动）
         print(f"[选角] 「开始游戏」变黄（黄色占比 {ratio:.3f}/模板 {ys or 0:.3f} @{yc}），点击…")  # 打印日志
         adb_tap(yc[0], yc[1])   # 点击开始游戏按钮
-        # 3) 等 10s 检查「确认」按钮：有则点击，5s 后退出；无则直接退出
-        print(f"[选角] 等待 {CHAR_CONFIRM_WAIT:.0f}s 后检查「确认」按钮…")  # 打印等待日志
-        time.sleep(CHAR_CONFIRM_WAIT)  # 等 10s 让游戏加载新角色
-        frame3 = capture_hdmi()  # 截取画面
-        if frame3 is not None:  # 截图成功
-            cf, cc = detect_button(frame3, TEMPLATE_START_CONFIRM, roi=confirm_roi(frame3))  # 中央区域检测「确认」
-            if cf is not None and cf >= START_CONFIRM_TH and cc:  # 匹配达标
-                print(f"[选角] 检测到「确认」（相似度 {cf:.3f} @{cc}），点击…")  # 打印日志
-                adb_tap(cc[0], cc[1])  # 点击确认按钮
-                print(f"[选角] 等待 {CHAR_EXIT_WAIT:.0f}s 后退出脚本")  # 打印等待日志
-                time.sleep(CHAR_EXIT_WAIT)  # 等 5s 后退出
-            else:               # 没有确认按钮
-                print(f"[选角] 未检测到「确认」（{cf or 0:.3f}），直接退出脚本")  # 打印日志
+        # 3) 点「开始游戏」后：先等 5s 再确认角色弹框；未出再补 5s（原 10s 总等待不变）
+        print(f"[选角] 等待 5s 后检查「确认」角色弹框…")  # 打印等待日志
+        time.sleep(5.0)         # 新增 5s 延时：先等 5s 再确认角色弹框
+        confirmed_clicked = False  # 是否已点确认
+        for _ in range(2):      # 最多 2 次检查（5s 一次 + 再 5s 一次）
+            frame3 = capture_hdmi()  # 截取画面
+            if frame3 is not None:  # 截图成功
+                cf, cc = detect_button(frame3, TEMPLATE_START_CONFIRM, roi=confirm_roi(frame3))  # 中央区域检测「确认」
+                if cf is not None and cf >= START_CONFIRM_TH and cc:  # 匹配达标
+                    print(f"[选角] 检测到「确认」（相似度 {cf:.3f} @{cc}），点击…")  # 打印日志
+                    adb_tap(cc[0], cc[1])  # 点击确认按钮
+                    confirmed_clicked = True  # 标记已点
+                    print(f"[选角] 等待 {CHAR_EXIT_WAIT:.0f}s 后退出脚本")  # 打印等待日志
+                    time.sleep(CHAR_EXIT_WAIT)  # 等 5s 后退出
+                    break       # 跳出检查循环
+                else:           # 这次没检测到
+                    print(f"[选角] 未检测到「确认」（{cf or 0:.3f}），再等 5s 补查…")  # 打印日志
+            time.sleep(5.0)     # 补等 5s（保持原 {CHAR_CONFIRM_WAIT:.0f}s 总等待）
+        if not confirmed_clicked:  # 两次都没点到确认
+            print("[选角] 两次均未检测到「确认」，直接退出脚本")  # 打印日志
         print("[选角] 点击「开始游戏」成功，退出脚本")  # 打印成功日志
         return True             # 返回成功（切换完成）
 
