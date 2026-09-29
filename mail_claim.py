@@ -26,16 +26,16 @@ TITLE = "dnfm-auto 独立功能"   # 弹窗标题：msgbox 提示框的统一标
 
 # 「提示」对话框标题栏模板（templates/template_decompose_hint.png，点金黄分解后弹出）
 DECOMPOSE_HINT_TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "template_decompose_hint.png")
-# 「提示」对话框右下角「确认」按钮在 2560x1440 下的实测坐标（截图模板匹配换算）
-DECOMPOSE_HINT_CONFIRM = (1503, 1157)
-# 高价值二次确认框「确认」按钮在 2560x1440 下的实测坐标（颜色分割定位上层金黄色按钮）
-DECOMPOSE_HIGHVALUE_CONFIRM = (1470, 922)
+# 「提示」对话框右下角「确认」按钮（千分比：原 2560x1440 实测 (1503,1157)，分辨率自适应）
+DECOMPOSE_HINT_CONFIRM = (587, 803)
+# 高价值二次确认框「确认」按钮（千分比：原 2560x1440 实测 (1470,922)，分辨率自适应）
+DECOMPOSE_HIGHVALUE_CONFIRM = (574, 640)
 
 
 def _decompose_back_to_town():
     """从分解/背包界面返回城镇主界面（点左上角返回箭头 + BACK 兜底）。"""
     print("[分解] 返回主页面…")
-    for i in range(4):          # 最多 4 轮
+    for i in range(7):          # 最多 7 轮（前 4 轮点返回箭头 + 后 3 轮 BACK 补强）
         frame = a.capture_hdmi()  # 截取当前画面
         if frame is None:       # 截图失败
             time.sleep(1)       # 等 1s
@@ -43,14 +43,16 @@ def _decompose_back_to_town():
         if a.at_town(frame):    # 已在城镇主界面
             print("[分解] 已回到城镇主界面")  # 打印日志
             return              # 返回
-        a.adb_tap(50, 43)       # 点背包界面左上角返回箭头（实测有效）
+        if i < 4:               # 前 4 轮：点背包界面左上角返回箭头（实测有效）
+            a.adb_tap(50, 43)   # 点返回箭头
+        else:                   # 后 3 轮：改按返回键兜底（弹框未关时 BACK 也能逐层关闭）
+            a.adb_back()        # 按 Android 返回键
         time.sleep(2.0)         # 等 2s
         frame2 = a.capture_hdmi()  # 再截一张
         if frame2 is not None and a.at_town(frame2):  # 已回城镇
             print("[分解] 已回到城镇主界面")  # 打印日志
             return              # 返回
-        a.adb_back()            # 兜底：按返回键
-        time.sleep(2.0)         # 等 2s
+    print("[分解] 警告：多次尝试未能回到城镇主界面（交由下一流程回城兜底）")  # 失败提示
 
 
 def _decompose_equip():
@@ -178,9 +180,9 @@ def _decompose_equip():
                         if cs is not None and cs >= a.DECOMPOSE_TH and cc:
                             a.adb_tap(cc[0], cc[1])  # 点实时检测到的上层确认按钮
                         else:
-                            a.adb_tap(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1])  # 兜底固定坐标
+                            a.tap_permille(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1], frame2)  # 兜底固定坐标（千分比自适应）
                     else:
-                        a.adb_tap(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1])  # 截图失败兜底
+                        a.tap_permille(DECOMPOSE_HIGHVALUE_CONFIRM[0], DECOMPOSE_HIGHVALUE_CONFIRM[1], frame2)  # 截图失败兜底（内部再截图换算）
                     highvalue_ok = True  # 标记已点内层确认
                     break       # 跳出检查循环
                 rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 同时检测「获得道具」弹窗
@@ -221,7 +223,7 @@ def _decompose_equip():
         if ts is None or ts < a.DECOMPOSE_TH:  # 标题栏已消失 → 弹框已关闭
             print("[分解] 分解弹框已关闭")  # 打印日志
             break               # 跳出循环
-        a.adb_tap(a.DECOMPOSE_CLOSE_X[0], a.DECOMPOSE_CLOSE_X[1])  # 点右上角 × 关闭
+        a.tap_permille(a.DECOMPOSE_CLOSE_X[0], a.DECOMPOSE_CLOSE_X[1], frame)  # 点右上角 × 关闭（千分比自适应）
         time.sleep(1.5)         # 等 1.5s
     _decompose_back_to_town()   # 返回主页面（城镇）
     print("[分解] 分解装备流程完成")  # 打印完成日志

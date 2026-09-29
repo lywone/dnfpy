@@ -145,7 +145,7 @@ DECOMPOSE_MAX_TRY = 10            # 各阶段最大尝试轮数
 DECOMPOSE_OUTER_CONFIRM = (1241, 955)   # 外层提示弹窗「确认」（分解后至少获得道具）
 DECOMPOSE_INNER_CONFIRM = (1235, 751)   # 内层高价值二次确认「确认」（确定要出售/分解吗）
 DECOMPOSE_RESULT_CONFIRM = (1069, 756)  # 「获得道具」弹窗「确认」
-DECOMPOSE_CLOSE_X = (2035, 134)         # 分解弹框右上角 ×（实测有效）
+DECOMPOSE_CLOSE_X = (795, 93)           # 分解弹框右上角 ×（千分比：原 2560x1440 实测 (2035,134)，分辨率自适应）
 
 # ---------------- 提示 ----------------
 def beep(ok=True):
@@ -773,6 +773,19 @@ def adb_tap(x, y):
             return              # 直接返回
     subprocess.run(base + ["shell", "input", "tap"] + args,  # 兜底：不带 display 点击
                    capture_output=True, timeout=30)
+
+
+def tap_permille(x, y, frame=None):
+    """按千分比坐标点击（分辨率自适应）：固定坐标以千分比定义，
+    调用前换算成当前画面像素，避免模拟器分辨率变化（2560x1440→1280x720）时超界失效。"""
+    if frame is None:           # 未传画面 → 现截一张拿尺寸
+        frame = capture_hdmi()
+    if frame is None:           # 截图失败
+        print("[点击] 无法截图，按千分比点击取消")  # 打印提示
+        return False            # 返回失败
+    h, w = frame.shape[0], frame.shape[1]  # 当前画面高宽
+    adb_tap(int(x * w / 1000), int(y * h / 1000))  # 千分比 → 像素 → 点击
+    return True                 # 返回成功
 
 
 def adb_back():
@@ -1424,7 +1437,7 @@ def decompose_equip():
         if ts is None or ts < DECOMPOSE_TH:  # 标题栏已消失 → 弹框已关闭
             print("[分解] 分解弹框已关闭")  # 打印日志
             break               # 跳出循环
-        adb_tap(DECOMPOSE_CLOSE_X[0], DECOMPOSE_CLOSE_X[1])  # 点右上角 × 关闭
+        tap_permille(DECOMPOSE_CLOSE_X[0], DECOMPOSE_CLOSE_X[1], frame)  # 点右上角 × 关闭（千分比自适应）
         time.sleep(1.5)         # 等 1.5s
     print("[分解] 返回主页面…")  # 打印返回日志
     for i in range(4):          # 最多 4 轮
