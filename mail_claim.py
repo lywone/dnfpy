@@ -44,7 +44,7 @@ def _decompose_back_to_town():
             print("[分解] 已回到城镇主界面")  # 打印日志
             return              # 返回
         if i < 4:               # 前 4 轮：点背包界面左上角返回箭头（实测有效）
-            a.adb_tap(50, 43)   # 点返回箭头
+            a.adb_tap(12, 40)   # 点背包界面左上角返回箭头（千分比，1280x720 实测 (12,40) 有效；(50,43) 是旧 2560x1440 像素值）
         else:                   # 后 3 轮：改按返回键兜底（弹框未关时 BACK 也能逐层关闭）
             a.adb_back()        # 按 Android 返回键
         time.sleep(2.0)         # 等 2s
@@ -205,7 +205,7 @@ def _decompose_equip():
                 rs, rc = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_RESULT, roi=a.decompose_popup_roi(frame))  # 检测「获得道具」弹窗
                 if rs is not None and rs >= a.DECOMPOSE_TH and rc:  # 匹配达标
                     print(f"[分解] 「获得道具」弹窗出现（{rs:.3f}），点击确认…")  # 打印日志
-                    a.adb_tap(a.DECOMPOSE_RESULT_CONFIRM[0], a.DECOMPOSE_RESULT_CONFIRM[1])  # 点获得道具确认坐标
+                    a.tap_permille(a.DECOMPOSE_RESULT_CONFIRM[0], a.DECOMPOSE_RESULT_CONFIRM[1], frame)  # 点获得道具确认（千分比自适应）
                     result_ok = True  # 标记已点结果确认
                     break       # 跳出检查循环
             print(f"[分解] 第 {i+1}/5 次未检测到「获得道具」弹窗，2s 后再查…")  # 打印等待日志
@@ -219,8 +219,9 @@ def _decompose_equip():
         if frame is None:       # 截图失败
             time.sleep(1)       # 等 1s
             continue            # 继续循环
-        ts, _ = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_TITLE, roi=a.decompose_title_roi(frame))  # 检测分解标题栏
-        if ts is None or ts < a.DECOMPOSE_TH:  # 标题栏已消失 → 弹框已关闭
+        # 弹框是否关闭以金黄「分解」按钮(GO)消失为准（TITLE 标题栏模板在 1280x720 匹配不到，不可用）
+        gs, _ = a.detect_button(frame, a.TEMPLATE_DECOMPOSE_GO, roi=a.decompose_go_roi(frame))  # 检测金黄分解按钮
+        if gs is None or gs < a.DECOMPOSE_TH:  # GO 消失 → 弹框已关闭
             print("[分解] 分解弹框已关闭")  # 打印日志
             break               # 跳出循环
         a.tap_permille(a.DECOMPOSE_CLOSE_X[0], a.DECOMPOSE_CLOSE_X[1], frame)  # 点右上角 × 关闭（千分比自适应）

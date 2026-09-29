@@ -142,10 +142,10 @@ DECOMPOSE_WAIT_AFTER_MAIL = 2.0   # 邮件完成后等待秒数（再点背包�
 DECOMPOSE_TH = 0.60               # 分解相关模板匹配阈值
 DECOMPOSE_MAX_TRY = 10            # 各阶段最大尝试轮数
 # 实测固定坐标（画面 2143x1204）：
-DECOMPOSE_OUTER_CONFIRM = (1241, 955)   # 外层提示弹窗「确认」（分解后至少获得道具）
-DECOMPOSE_INNER_CONFIRM = (1235, 751)   # 内层高价值二次确认「确认」（确定要出售/分解吗）
-DECOMPOSE_RESULT_CONFIRM = (1069, 756)  # 「获得道具」弹窗「确认」
-DECOMPOSE_CLOSE_X = (795, 93)           # 分解弹框右上角 ×（千分比：原 2560x1440 实测 (2035,134)，分辨率自适应）
+DECOMPOSE_OUTER_CONFIRM = (485, 663)    # 外层提示弹窗「确认」（千分比：原 2560x1440 (1241,955)）
+DECOMPOSE_INNER_CONFIRM = (482, 521)    # 内层高价值二次确认「确认」（千分比：原 2560x1440 (1235,751)）
+DECOMPOSE_RESULT_CONFIRM = (418, 525)   # 「获得道具」弹窗「确认」（千分比：原 2560x1440 (1069,756)）
+DECOMPOSE_CLOSE_X = (920, 88)           # 分解弹框右上角 ×（千分比，1280x720 实测 (920,88) 有效；原 2560x1440 (2035,134)）
 
 # ---------------- 提示 ----------------
 def beep(ok=True):
@@ -1280,7 +1280,7 @@ def close_panel():
             return              # 无法检查直接返回
         s, _ = detect_button(frame, TEMPLATE_CHALLENGE_PANEL)  # 检测面板是否还在
         if s is not None and s >= PANEL_TH:  # 面板还在（拖动没关掉）
-            adb_tap(1996, 123)  # 右上角 ×（备用关闭方式）
+            tap_permille(780, 85, frame)  # 右上角 ×（备用关闭方式，千分比自适应）
             time.sleep(2.0)     # 等 2s
     except Exception as e:      # 关闭过程异常
         print(f"[选角] 关闭面板异常：{e}")  # 打印异常（不影响主流程）
@@ -1423,7 +1423,7 @@ def decompose_equip():
         rs, rc = detect_button(frame, TEMPLATE_DECOMPOSE_RESULT, roi=decompose_popup_roi(frame))  # 检测「获得道具」弹窗
         if rs is not None and rs >= DECOMPOSE_TH and rc:  # 匹配达标
             print(f"[分解] 「获得道具」弹窗出现（{rs:.3f}），点击确认…")  # 打印日志
-            adb_tap(DECOMPOSE_RESULT_CONFIRM[0], DECOMPOSE_RESULT_CONFIRM[1])  # 点获得道具确认坐标
+            tap_permille(DECOMPOSE_RESULT_CONFIRM[0], DECOMPOSE_RESULT_CONFIRM[1], frame)  # 点获得道具确认（千分比自适应）
             time.sleep(2.0)     # 等 2s
             break               # 跳出循环
         time.sleep(1)           # 等 1s 再试
@@ -1433,8 +1433,9 @@ def decompose_equip():
         if frame is None:       # 截图失败
             time.sleep(1)       # 等 1s
             continue            # 继续循环
-        ts, _ = detect_button(frame, TEMPLATE_DECOMPOSE_TITLE, roi=decompose_title_roi(frame))  # 检测分解标题栏
-        if ts is None or ts < DECOMPOSE_TH:  # 标题栏已消失 → 弹框已关闭
+        # 弹框是否关闭以金黄「分解」按钮(GO)消失为准（TITLE 标题栏模板在 1280x720 匹配不到，不可用）
+        gs, _ = detect_button(frame, TEMPLATE_DECOMPOSE_GO, roi=decompose_go_roi(frame))  # 检测金黄分解按钮
+        if gs is None or gs < DECOMPOSE_TH:  # GO 消失 → 弹框已关闭
             print("[分解] 分解弹框已关闭")  # 打印日志
             break               # 跳出循环
         tap_permille(DECOMPOSE_CLOSE_X[0], DECOMPOSE_CLOSE_X[1], frame)  # 点右上角 × 关闭（千分比自适应）
