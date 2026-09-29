@@ -106,7 +106,7 @@ RAW_PATH = os.path.join(IMG_DIR, "challenge_raw.png")  # --capture 截取的原�
 
 MAIL_TH = 0.55                 # 「邮箱」图标匹配阈值（城镇实测 0.779；1280x720 下旧模板 0.592，降阈值兜底）
 CLAIM_TH = 0.65                # 「领取全部物品」阈值（实测 0.974，城镇底部误匹配 0.586）
-MAIL_CONFIRM_TH = 0.60         # 领取后「确认」按钮阈值
+MAIL_CONFIRM_TH = 0.55         # 领取后「确认」按钮阈值（防分辨率漂移掉分；邮箱背景误匹配 0.525）
 MAIL_BACK_TH = 0.60            # 「返回邮箱」阈值（同源模板：界面 1.0 / 城镇 0.377）
 MAIL_WAIT_AFTER_TOWN = 5.0     # 返回城镇后等待秒数（再开邮箱）
 MAIL_ROUNDS = 10               # 邮箱领取最大尝试轮数
