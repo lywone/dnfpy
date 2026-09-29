@@ -104,7 +104,7 @@ TEMPLATE_DECOMPOSE_RESULT = os.path.join(IMG_DIR, "template_decompose_result.png
 TEMPLATE_BAG_BACK = os.path.join(IMG_DIR, "template_bag_back.png")      # 背包界面返回（未用，BACK 更可靠）模板路径
 RAW_PATH = os.path.join(IMG_DIR, "challenge_raw.png")  # --capture 截取的原始画面保存路径
 
-MAIL_TH = 0.60                 # 「邮箱」图标匹配阈值（城镇实测 0.779）
+MAIL_TH = 0.55                 # 「邮箱」图标匹配阈值（城镇实测 0.779；1280x720 下旧模板 0.592，降阈值兜底）
 CLAIM_TH = 0.65                # 「领取全部物品」阈值（实测 0.974，城镇底部误匹配 0.586）
 MAIL_CONFIRM_TH = 0.60         # 领取后「确认」按钮阈值
 MAIL_BACK_TH = 0.60            # 「返回邮箱」阈值（同源模板：界面 1.0 / 城镇 0.377）
