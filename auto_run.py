@@ -106,6 +106,7 @@ RAW_PATH = os.path.join(IMG_DIR, "challenge_raw.png")  # --capture 截取的原�
 
 MAIL_TH = 0.55                 # 「邮箱」图标匹配阈值（城镇实测 0.779；1280x720 下旧模板 0.592，降阈值兜底）
 CLAIM_TH = 0.65                # 「领取全部物品」阈值（实测 0.974，城镇底部误匹配 0.586）
+CLAIM_BTN_PERMILLE = (565, 932)  # 「领取全部物品」按钮固定千分比中心（1280x720/1618x913/1372x777 实测一致；模板低分匹配位置会偏移到邻钮，故固定坐标点击）
 MAIL_CONFIRM_TH = 0.55         # 领取后「确认」按钮阈值（防分辨率漂移掉分；邮箱背景误匹配 0.525）
 MAIL_BACK_TH = 0.60            # 「返回邮箱」阈值（同源模板：界面 1.0 / 城镇 0.377）
 MAIL_WAIT_AFTER_TOWN = 5.0     # 返回城镇后等待秒数（再开邮箱）
@@ -1048,8 +1049,9 @@ def mail_claim():
         cs, cc = detect_button(frame, TEMPLATE_CLAIM,
                                roi=(0, int(h * 0.85), w, h))  # 只在画面底部 85%-100% 搜索
         if cs is not None and cs >= CLAIM_TH and cc:  # 匹配达标
-            print(f"[邮箱] 点击「领取全部物品」（相似度 {cs:.3f}，坐标 {cc}），3s 后查「确认」…")  # 打印日志
-            adb_tap(cc[0], cc[1])  # 点击领取全部按钮
+            # 点击用固定千分比坐标（按钮真实位置三分辨率一致；模板低分匹配会偏到「角色邮件管理」）
+            print(f"[邮箱] 点击「领取全部物品」（相似度 {cs:.3f}，固定坐标 {CLAIM_BTN_PERMILLE}），3s 后查「确认」…")  # 打印日志
+            tap_permille(CLAIM_BTN_PERMILLE[0], CLAIM_BTN_PERMILLE[1], frame)  # 固定千分比坐标点击（分辨率自适应）
             time.sleep(3.0)     # 等 3s 让领取完成/确认弹窗出现
             claimed = True      # 标记已领取
             break               # 跳出循环进入后续确认步骤
