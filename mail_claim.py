@@ -12,6 +12,7 @@
   python mail_claim.py mail     只跑邮件领取
   python mail_claim.py shop     只跑刷新神秘商店（含邮件）
   python mail_claim.py char     只跑切换角色（单次）
+  python mail_claim.py relist  拍卖行「我的上架」重新上架（循环挂售期满物品，需先停在该界面）
   python mail_claim.py --quiet  静默模式（不弹窗）
 """
 import os   # 操作系统路径处理：用于拼脚本目录、定位 auto_run.py
@@ -238,6 +239,118 @@ def _decompose_equip():
     return True                 # 返回完成
 
 
+# ---------------- 拍卖行「我的上架」重新上架 ----------------
+def _relist_click(frame, template, permille, label, roi=None):
+    """检测模板按钮 → 命中用模板实测坐标；未命中按固定千分比兜底。
+    列表/弹框/键盘层 adb 触摸注入到不了，统一走 mouse_click_fg（临时置前 + 真实鼠标 + 恢复前台）。
+    frame：当前已截取画面；roi：可选限定搜索区域。返回 True=已发起点击。"""
+    h, w = frame.shape[0], frame.shape[1]  # 画面高宽
+    score, center = a.detect_button(frame, template, roi=roi)  # 模板匹配
+    if score is not None and score >= a.RELIST_TH and center:  # 命中阈值
+        print(f"[上架] 点击「{label}」（{score:.3f} @{center}）")  # 打印命中日志
+        return a.mouse_click_fg(center[0], center[1], frame)  # 模板坐标真实鼠标点击
+    # 模板未命中 → 固定千分比兜底（弹框/键盘内按钮位置不随行变化）
+    px = int(permille[0] * w / 1000)   # 千分比 → 像素 x
+    py = int(permille[1] * h / 1000)   # 千分比 → 像素 y
+    score_txt = f"{score:.3f}" if score is not None else "None"  # 分数显示文本（None 不套小数格式）
+    print(f"[上架] 「{label}」模板未命中（分数 {score_txt}），"
+          f"按固定坐标 ({px},{py}) 兜底点击")  # 打印兜底日志
+    return a.mouse_click_fg(px, py, frame)  # 固定坐标真实鼠标点击
+
+
+def relist_loop(quiet):
+    """拍卖行「我的上架」重新上架循环（独立子命令 relist）：
+    前置：用户已把游戏停在拍卖行「我的上架」界面。
+    每轮：
+      1) 检测列表「重新上架」按钮；连续 RELIST_CHECK_ROUNDS(3) 遍（每遍间隔 2s）都没有 → 退出循环
+      2) 点「重新上架」→ 等 3s → 点「出售数量」输入框
+      3) 等 2s → 点键盘「最大」
+      4) 等 1s → 点竖排「输入」（关闭键盘回出售弹框）
+      5) 等 1s → 点底部「出售物品」
+      6) 等 2s → 点二次确认「确认」
+      7) 等 5s → 回到列表，重复步骤 1
+    任一步点击失败都不中断本轮，继续后续步骤；3 遍无待上架物品即正常结束。"""
+    round_no = 0  # 轮次计数
+    while True:
+        round_no += 1  # 新一轮自增
+        print("\n" + "=" * 52)  # 轮次分隔线
+        print(f"  第 {round_no} 轮：检测「重新上架」")
+        print("=" * 52)
+
+        # 步骤1：检测「重新上架」按钮，3 遍（间隔 2s），都没有 → 退出
+        found = False                 # 是否检测到待上架按钮
+        relist_pos = None             # 命中按钮中心坐标
+        relist_frame = None           # 命中时的画面（供点击复用，避免重复截图）
+        for k in range(a.RELIST_CHECK_ROUNDS):  # 最多 3 遍
+            frame = a.capture_hdmi()  # 截取当前画面
+            if frame is None:         # 截图失败
+                print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍截图失败，2s 后再查…")
+                time.sleep(2.0)
+                continue
+            s, c = a.detect_button(frame, a.TEMPLATE_RELIST, roi=a.relist_btn_roi(frame))  # 右侧按钮列检测
+            if s is not None and s >= a.RELIST_TH and c:  # 匹配达标
+                print(f"[上架] 检测到「重新上架」（{s:.3f} @{c}）")
+                found = True
+                relist_pos, relist_frame = c, frame
+                break
+            print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍未检测到「重新上架」，2s 后再查…")
+            time.sleep(2.0)           # 间隔 2s 再查
+        if not found:                 # 3 遍都无待上架物品
+            print("[上架] 3 遍检查均无「重新上架」按钮，重新上架流程结束。")
+            a.beep(True)             # 正常结束提示音
+            if not quiet:            # 非静默模式弹窗
+                a.msgbox("未检测到待重新上架物品，流程结束。", TITLE)
+            return 0                 # 正常退出
+
+        # 步骤2：点「重新上架」→ 3s 后点「出售数量」输入框
+        a.mouse_click_fg(relist_pos[0], relist_pos[1], relist_frame)
+        print("[上架] 已点「重新上架」，等 3s 后点数量…")
+        time.sleep(3.0)
+        f = a.capture_hdmi()
+        if f is not None:
+            _relist_click(f, a.TEMPLATE_RELIST_QTY, a.RELIST_QTY_PERMILLE, "出售数量输入框")
+        else:
+            print("[上架] 截图失败，跳过「出售数量」点击")
+
+        # 步骤3：2s 后点键盘「最大」
+        time.sleep(2.0)
+        f = a.capture_hdmi()
+        if f is not None:
+            _relist_click(f, a.TEMPLATE_RELIST_MAX, a.RELIST_MAX_PERMILLE, "最大",
+                          roi=a.relist_kb_roi(f))
+        else:
+            print("[上架] 截图失败，跳过「最大」点击")
+
+        # 步骤4：1s 后点竖排「输入」（确认数量并关闭键盘）
+        time.sleep(1.0)
+        f = a.capture_hdmi()
+        if f is not None:
+            _relist_click(f, a.TEMPLATE_RELIST_ENTER, a.RELIST_ENTER_PERMILLE, "输入",
+                          roi=a.relist_kb_roi(f))
+        else:
+            print("[上架] 截图失败，跳过「输入」点击")
+
+        # 步骤5：1s 后点底部「出售物品」
+        time.sleep(1.0)
+        f = a.capture_hdmi()
+        if f is not None:
+            _relist_click(f, a.TEMPLATE_RELIST_SELL, a.RELIST_SELL_PERMILLE, "出售物品")
+        else:
+            print("[上架] 截图失败，跳过「出售物品」点击")
+
+        # 步骤6：2s 后点二次确认「确认」
+        time.sleep(2.0)
+        f = a.capture_hdmi()
+        if f is not None:
+            _relist_click(f, a.TEMPLATE_RELIST_CONFIRM, a.RELIST_CONFIRM_PERMILLE, "确认")
+        else:
+            print("[上架] 截图失败，跳过「确认」点击")
+
+        # 步骤7：5s 后回到列表，重复步骤1
+        print("[上架] 本轮重新上架完成，等 5s 后回列表继续检查…")
+        time.sleep(5.0)
+
+
 def run_loop(quiet):
     """循环：接收邮件 → 分解装备 → 刷新神秘商店 → 切换角色。
     切角成功 → 下一轮；切角无可刷新（False）→ 结束循环。"""
@@ -294,12 +407,17 @@ def main():
         print("  模式：邮件领取")  # 打印该模式说明
     elif mode == "shop":  # 模式：邮件 + 刷新商店
         print("  模式：刷新神秘商店")  # 打印该模式说明
+    elif mode == "relist":  # 模式：拍卖行重新上架
+        print("  模式：拍卖行重新上架（我的上架 → 重新挂售期满物品）")  # 打印该模式说明
     elif mode == "loop":  # 模式：循环（默认）
         print("  模式：循环（邮件 → 分解装备 → 商店 → 切角 → 重复）")  # 打印该模式说明
     else:  # 未知模式参数
-        print(f"  未知模式：{mode}（支持 mail / shop / char / loop）")  # 提示合法模式
+        print(f"  未知模式：{mode}（支持 mail / shop / char / relist / loop）")  # 提示合法模式
         return 2  # 返回码 2 表示参数错误退出
-    print("  请确认游戏已切到城镇主界面。")  # 提醒用户先把游戏切到城镇
+    if mode == "relist":  # 重新上架模式：需先停在拍卖行「我的上架」界面
+        print("  请确认游戏已停在拍卖行「我的上架」界面。")  # 界面提醒
+    else:  # 其余模式：需在城镇主界面
+        print("  请确认游戏已切到城镇主界面。")  # 界面提醒
     print("=" * 52)  # 打印结尾分隔线
     try:  # 捕获运行期异常（模拟器断开/模板缺失等）
         if mode == "loop":  # 循环模式
@@ -315,6 +433,8 @@ def main():
             a.beep(False)  # 切角失败：播放失败提示音
             print("\n[失败] 切换角色未完成（无可刷新角色），请检查游戏画面后重试。")  # 打印失败原因
             return 1  # 返回码 1 表示流程未完成退出
+        if mode == "relist":  # 拍卖行重新上架模式（独立流程，不经过邮件前置）
+            return relist_loop(quiet)  # 进入重新上架循环，待上架物品清空后返回 0
         ok = a.mail_claim()  # mail/shop 模式共同前置步骤：先领取邮件
         if not ok:  # 邮件领取失败
             a.beep(False)  # 播放失败提示音

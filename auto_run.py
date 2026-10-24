@@ -102,6 +102,15 @@ TEMPLATE_DECOMPOSE_CONFIRM = os.path.join(IMG_DIR, "template_decompose_confirm.p
 TEMPLATE_DECOMPOSE_HIGHVALUE = os.path.join(IMG_DIR, "template_decompose_highvalue.png")  # 高价值二次确认弹窗模板路径
 TEMPLATE_DECOMPOSE_RESULT = os.path.join(IMG_DIR, "template_decompose_result.png")  # 「获得道具」弹窗模板路径
 TEMPLATE_BAG_BACK = os.path.join(IMG_DIR, "template_bag_back.png")      # 背包界面返回（未用，BACK 更可靠）模板路径
+
+# 拍卖行「重新上架」流程相关模板
+TEMPLATE_RELIST = os.path.join(IMG_DIR, "template_relist.png")              # 列表行「重新上架」橙按钮模板
+TEMPLATE_RELIST_QTY = os.path.join(IMG_DIR, "template_relist_qty.png")      # 出售数量输入框（小键盘图标+数字）模板
+TEMPLATE_RELIST_MAX = os.path.join(IMG_DIR, "template_relist_max.png")      # 数字键盘「最大」按钮模板
+TEMPLATE_RELIST_ENTER = os.path.join(IMG_DIR, "template_relist_enter.png")  # 数字键盘竖排「输入」长条模板
+TEMPLATE_RELIST_SELL = os.path.join(IMG_DIR, "template_relist_sell.png")    # 出售弹框底部「出售物品」按钮模板
+TEMPLATE_RELIST_CONFIRM = os.path.join(IMG_DIR, "template_relist_confirm.png")  # 二次确认弹框「确认」按钮模板
+
 RAW_PATH = os.path.join(IMG_DIR, "challenge_raw.png")  # --capture 截取的原始画面保存路径
 
 MAIL_TH = 0.55                 # 「邮箱」图标匹配阈值（城镇实测 0.779；1280x720 下旧模板 0.592，降阈值兜底）
@@ -147,6 +156,16 @@ DECOMPOSE_OUTER_CONFIRM = (485, 663)    # 外层提示弹窗「确认」（千�
 DECOMPOSE_INNER_CONFIRM = (482, 521)    # 内层高价值二次确认「确认」（千分比：原 2560x1440 (1235,751)）
 DECOMPOSE_RESULT_CONFIRM = (418, 525)   # 「获得道具」弹窗「确认」（千分比：原 2560x1440 (1069,756)）
 DECOMPOSE_CLOSE_X = (920, 88)           # 分解弹框右上角 ×（千分比，1280x720 实测 (920,88) 有效；原 2560x1440 (2035,134)）
+
+# ---------------- 拍卖行重新上架 ----------------
+RELIST_TH = 0.60                        # 重新上架各按钮匹配阈值
+RELIST_CHECK_ROUNDS = 3                 # 列表未检测到「重新上架」的重复检查次数（3 遍都无则退出）
+# 模板未命中时的固定千分比兜底坐标（1280x720 实测换算；弹框/键盘内按钮位置不随行变化）
+RELIST_QTY_PERMILLE = (780, 674)        # 出售数量输入框（实测 (998,485)）
+RELIST_MAX_PERMILLE = (952, 413)        # 键盘「最大」（实测 (1219,297)）
+RELIST_ENTER_PERMILLE = (952, 707)     # 键盘竖排「输入」长条（实测 (1219,509)）
+RELIST_SELL_PERMILLE = (734, 926)       # 弹框底部「出售物品」（实测 (940,667)）
+RELIST_CONFIRM_PERMILLE = (504, 743)    # 二次确认「确认」按钮（实测 (645,535)）
 
 # ---------------- 提示 ----------------
 def beep(ok=True):
@@ -613,6 +632,19 @@ def detect_reward(frame):
     return best                              # 返回最优 (相似度, 中心)
 
 
+def relist_btn_roi(frame):
+    """列表行「重新上架」按钮搜索区域：右侧按钮列（x>0.82w, y 0.15-0.97h），
+    排除左侧导航与行情文字；下沿放到 0.97h 以覆盖滚动到列表底部的各行"""
+    h, w = frame.shape[0], frame.shape[1]  # 画面高宽
+    return (int(w * 0.82), int(h * 0.15), w, int(h * 0.97))
+
+
+def relist_kb_roi(frame):
+    """数字键盘「最大/输入」搜索区域：右侧键盘列（x>0.88w, y 0.30-0.85h），排除左侧出售弹框"""
+    h, w = frame.shape[0], frame.shape[1]  # 画面高宽
+    return (int(w * 0.88), int(h * 0.30), w, int(h * 0.85))
+
+
 def confirm_reward(frame):
     """连续两次检测确认「领奖结算」（两位置都试，防抖动/防误触），返回 (相似度, 中心)"""
     score, center = detect_reward(frame)     # 第一次检测（两个位置）
@@ -908,6 +940,53 @@ def mouse_click(x, y):
     user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP 松开左键
     print(f"[鼠标] 点击 ({x},{y}) → 窗口 ({wx},{wy}) → 屏幕 ({sx},{sy})")  # 打印点击日志
     return True                          # 返回成功
+
+
+def mouse_click_fg(x, y, frame=None):
+    """真实鼠标点击（临时置前 + 结束恢复原前台），专供 adb 触摸注入到不了的
+    拍卖行列表/出售弹框/数字键盘层（实测：adb input tap 仅左侧导航标签有效，
+    右侧列表/弹框/键盘层必须管理员进程 + 真实鼠标事件）。
+    坐标为 HDMI 画面像素；内部按客户区比例换算到屏幕坐标。
+    frame：可选传入已截取的当前画面，避免重复截图；不传则内部现截。
+    焦点：点击期间临时置前游戏窗口（绕过不抢焦点开关），finally 恢复用户原前台。"""
+    hwnd = find_game_window()            # 查找游戏窗口句柄
+    if hwnd is None:                     # 找不到游戏窗口
+        print("[鼠标] 未找到游戏窗口，无法点击")  # 打印提示
+        return False                     # 返回失败
+    user32, ctypes = _win_user32()       # 获取 user32 API 和 ctypes
+    import ctypes.wintypes               # 显式导入 wintypes（POINT 结构）
+    if frame is None:                    # 外部未传画面
+        frame = capture_hdmi()          # 现截一张拿 HDMI 尺寸
+    if frame is None:                    # 截图失败
+        print("[鼠标] 无法截图，取消点击")  # 打印提示
+        return False                     # 返回失败
+    fw, fh = frame.shape[1], frame.shape[0]  # HDMI 画面宽高
+    cw, ch = get_client_size(hwnd)       # 窗口客户区尺寸
+    if not cw or not ch:                 # 客户区获取失败
+        print("[鼠标] 无法获取窗口客户区，取消点击")  # 打印提示
+        return False                     # 返回失败
+    prev_fg = user32.GetForegroundWindow()  # 记录原前台窗口（点击后恢复）
+    _force_foreground_impl(hwnd)         # 临时置前（真实鼠标必须前台，绕过不抢焦点开关）
+    time.sleep(0.3)                      # 等 0.3s 让窗口激活
+    try:                                 # 执行点击（异常也要恢复焦点）
+        wx = int(x * cw / fw)            # HDMI 坐标 → 客户区 x（按宽度比例）
+        wy = int(y * ch / fh)            # HDMI 坐标 → 客户区 y（按高度比例）
+        pt = ctypes.wintypes.POINT(0, 0)     # 客户区原点结构
+        user32.ClientToScreen(hwnd, ctypes.byref(pt))  # 客户区原点 → 屏幕坐标
+        sx, sy = pt.x + wx, pt.y + wy    # 目标屏幕坐标 = 客户区原点 + 客户区内坐标
+        user32.SetCursorPos(sx, sy)      # 移动鼠标到目标位置
+        time.sleep(0.2)                  # 等 0.2s 让鼠标就位
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN 按下左键
+        time.sleep(0.08)                  # 极短间隔（80ms）
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP 松开左键
+        print(f"[鼠标] 点击 HDMI({x},{y}) → 屏幕 ({sx},{sy})")  # 打印点击日志
+        return True                      # 返回成功
+    finally:                             # 无论成败都要恢复焦点
+        if prev_fg and prev_fg != hwnd:  # 原前台窗口有效且不是游戏窗口
+            try:                         # 尝试恢复
+                user32.SetForegroundWindow(prev_fg)  # 焦点还给用户原窗口
+            except Exception:            # 恢复失败（窗口已关闭等）
+                pass                     # 忽略，不影响主流程
 
 
 def stage3_trigger_challenge(hwnd):
