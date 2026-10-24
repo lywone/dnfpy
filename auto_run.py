@@ -288,6 +288,25 @@ def find_game_window():
     return found[0] if found else None  # 返回第一个匹配窗口；没有则返回 None
 
 
+def find_subwin(parent_hwnd, class_name="subWin"):
+    """枚举父窗口下可见的指定类名子窗口，返回第一个 hwnd 或 None。
+    游戏画面渲染在 subWin 子窗口内（16:9），坐标映射应以它为基准；
+    顶层客户区含标题/边距、非 16:9，直接按它拉伸会让 y 方向偏移、点不中按钮。"""
+    user32, ctypes = _win_user32()  # 获取 user32 API
+    found = []                      # 命中的子窗口句柄列表
+
+    def cb(h, _):                   # EnumChildWindows 回调
+        buf = ctypes.create_unicode_buffer(256)  # 类名缓冲区
+        user32.GetClassNameW(h, buf, 256)         # 读取子窗口类名
+        if user32.IsWindowVisible(h) and buf.value == class_name:
+            found.append(h)
+        return True
+
+    proto = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    user32.EnumChildWindows(parent_hwnd, proto(cb), 0)
+    return found[0] if found else None
+
+
 def send_key(hwnd, vk, down):
     """PostMessage 直发 WM_KEYDOWN / WM_KEYUP"""
     user32, ctypes = _win_user32()  # 获取 user32 API
@@ -946,7 +965,8 @@ def mouse_click_fg(x, y, frame=None):
     """真实鼠标点击（临时置前 + 结束恢复原前台），专供 adb 触摸注入到不了的
     拍卖行列表/出售弹框/数字键盘层（实测：adb input tap 仅左侧导航标签有效，
     右侧列表/弹框/键盘层必须管理员进程 + 真实鼠标事件）。
-    坐标为 HDMI 画面像素；内部按客户区比例换算到屏幕坐标。
+    坐标为 HDMI 画面像素；内部以画面子窗口 subWin（16:9）客户区比例换算到屏幕坐标，
+    找不到 subWin 时回退顶层客户区。
     frame：可选传入已截取的当前画面，避免重复截图；不传则内部现截。
     焦点：点击期间临时置前游戏窗口（绕过不抢焦点开关），finally 恢复用户原前台。"""
     hwnd = find_game_window()            # 查找游戏窗口句柄
@@ -961,7 +981,8 @@ def mouse_click_fg(x, y, frame=None):
         print("[鼠标] 无法截图，取消点击")  # 打印提示
         return False                     # 返回失败
     fw, fh = frame.shape[1], frame.shape[0]  # HDMI 画面宽高
-    cw, ch = get_client_size(hwnd)       # 窗口客户区尺寸
+    base = find_subwin(hwnd) or hwnd      # 坐标基准：优先画面子窗口 subWin（16:9），找不到回退顶层
+    cw, ch = get_client_size(base)        # 基准窗口客户区尺寸
     if not cw or not ch:                 # 客户区获取失败
         print("[鼠标] 无法获取窗口客户区，取消点击")  # 打印提示
         return False                     # 返回失败
@@ -969,10 +990,10 @@ def mouse_click_fg(x, y, frame=None):
     _force_foreground_impl(hwnd)         # 临时置前（真实鼠标必须前台，绕过不抢焦点开关）
     time.sleep(0.3)                      # 等 0.3s 让窗口激活
     try:                                 # 执行点击（异常也要恢复焦点）
-        wx = int(x * cw / fw)            # HDMI 坐标 → 客户区 x（按宽度比例）
-        wy = int(y * ch / fh)            # HDMI 坐标 → 客户区 y（按高度比例）
+        wx = int(x * cw / fw)            # HDMI 坐标 → 基准客户区 x（按宽度比例）
+        wy = int(y * ch / fh)            # HDMI 坐标 → 基准客户区 y（按高度比例）
         pt = ctypes.wintypes.POINT(0, 0)     # 客户区原点结构
-        user32.ClientToScreen(hwnd, ctypes.byref(pt))  # 客户区原点 → 屏幕坐标
+        user32.ClientToScreen(base, ctypes.byref(pt))  # 基准客户区原点 → 屏幕坐标
         sx, sy = pt.x + wx, pt.y + wy    # 目标屏幕坐标 = 客户区原点 + 客户区内坐标
         user32.SetCursorPos(sx, sy)      # 移动鼠标到目标位置
         time.sleep(0.2)                  # 等 0.2s 让鼠标就位
