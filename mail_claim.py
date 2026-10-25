@@ -12,7 +12,7 @@
   python mail_claim.py mail     只跑邮件领取
   python mail_claim.py shop     只跑刷新神秘商店（含邮件）
   python mail_claim.py char     只跑切换角色（单次）
-  python mail_claim.py relist  拍卖行「我的上架」重新上架（循环挂售期满物品，需先停在该界面）
+  python mail_claim.py relist  拍卖行「我的上架」重新上架（循环挂售期满物品；无货自动关闭重开复检 5 轮）
   python mail_claim.py --quiet  静默模式（不弹窗）
 """
 import os   # 操作系统路径处理：用于拼脚本目录、定位 auto_run.py
@@ -258,29 +258,53 @@ def _relist_click(frame, template, permille, label, roi=None):
     return a.mouse_click_fg(px, py, frame)  # 固定坐标真实鼠标点击
 
 
+# ---------------- 拍卖行关闭 / 重开（无货复检专用，后台 adb 通道，不置前抢焦点） ----------------
+def _auction_close():
+    """关闭拍卖行回城镇：点左上角返回箭头 → 等 RELIST_WAIT_CLOSE 秒缓冲 → 校验是否回城镇。
+    返回 True=已检测到城镇主界面；False=未回到城镇（点击动作已发起，后续重开步骤继续执行）。"""
+    print("[上架] 关闭拍卖行（点左上角返回箭头）…")
+    a.tap_permille(*a.RELIST_BACK_PERMILLE)
+    time.sleep(a.RELIST_WAIT_CLOSE)
+    f = a.capture_hdmi()
+    if f is not None and a.at_town(f):
+        print("[上架] 已回到城镇主界面")
+        return True
+    print("[上架] 返回后未检测到城镇主界面，继续后续重开步骤")
+    return False
+
+
+def _auction_reopen_mylist():
+    """城镇 → 点顶部拍卖行入口 → 点左侧「我的上架」标签 → 等列表刷新。
+    返回重开后的画面 frame（截图失败返回 None）。"""
+    print(f"[上架] 等 {a.RELIST_WAIT_OPEN:.1f}s 后重开拍卖行（点顶部锤子入口）…")
+    a.tap_permille(*a.RELIST_AUCTION_ENTRY_PERMILLE)
+    time.sleep(a.RELIST_WAIT_OPEN)
+    print("[上架] 点左侧「我的上架」标签…")
+    a.tap_permille(*a.RELIST_MYLIST_PERMILLE)
+    time.sleep(a.RELIST_WAIT_TAB)
+    return a.capture_hdmi()
+
+
 def relist_loop(quiet):
     """拍卖行「我的上架」重新上架循环（独立子命令 relist）：
-    前置：用户已把游戏停在拍卖行「我的上架」界面。
+    前置：用户已把游戏停在拍卖行「我的上架」界面；检测无货时脚本会自动关闭重开拍卖行复检。
     每轮：
-      1) 检测列表「重新上架」按钮；连续 RELIST_CHECK_ROUNDS(3) 遍（每遍间隔 2s）都没有 → 退出循环
+      1) 检测列表「重新上架」按钮；连续 RELIST_CHECK_ROUNDS(3) 遍（每遍间隔 2s）都没有 →
+         关闭拍卖行 → 等 3s → 重开拍卖行 → 点「我的上架」→ 重新检测；如此关闭重开复检最多
+         RELIST_REOPEN_ROUNDS(5) 轮，5 轮都无待上架物品才结束流程。
       2) 点「重新上架」→ 等 3s → 点「出售数量」输入框
       3) 等 2s → 点键盘「最大」
       4) 等 1s → 点竖排「输入」（关闭键盘回出售弹框）
       5) 等 1s → 点底部「出售物品」
       6) 等 2s → 点二次确认「确认」
       7) 等 5s → 回到列表，重复步骤 1
-    任一步点击失败都不中断本轮，继续后续步骤；3 遍无待上架物品即正常结束。"""
-    round_no = 0  # 轮次计数
-    while True:
-        round_no += 1  # 新一轮自增
-        print("\n" + "=" * 52)  # 轮次分隔线
-        print(f"  第 {round_no} 轮：检测「重新上架」")
-        print("=" * 52)
+    任一步点击失败都不中断本轮，继续后续步骤；检测到货后复检计数清零重新计。"""
+    round_no = 0               # 检测/上架尝试轮次计数
+    reopen_round = 0           # 关闭重开复检计数（检测到待上架物品后清零）
 
-        # 步骤1：检测「重新上架」按钮（自动排除「取消出售」在售按钮），3 遍（间隔 2s）都没有 → 退出
-        found = False                 # 是否检测到待上架按钮
-        relist_pos = None             # 命中按钮中心坐标
-        relist_frame = None           # 命中时的画面（供点击复用，避免重复截图）
+    def _probe_relist():
+        """在当前「我的上架」列表检测可点的「重新上架」按钮，连续 RELIST_CHECK_ROUNDS 遍
+        （每遍间隔 2s）。返回 (found, pos, frame)；安全判定内部已排除「取消出售」。"""
         for k in range(a.RELIST_CHECK_ROUNDS):  # 最多 3 遍
             frame = a.capture_hdmi()  # 截取当前画面
             if frame is None:         # 截图失败
@@ -288,19 +312,36 @@ def relist_loop(quiet):
                 time.sleep(2.0)
                 continue
             s, c = a.detect_relist_safe(frame)  # 安全检测：仅「重新上架」达标且不是「取消出售」才命中
-            if s is not None and c:  # 安全命中（函数内部已校验阈值与取消出售互斥）
+            if s is not None and c:  # 安全命中
                 print(f"[上架] 检测到「重新上架」（{s:.3f} @{c}）")
-                found = True
-                relist_pos, relist_frame = c, frame
-                break
+                return True, c, frame
             print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍未检测到「重新上架」（已排除取消出售），2s 后再查…")
             time.sleep(2.0)           # 间隔 2s 再查
-        if not found:                 # 3 遍都无待上架物品
-            print("[上架] 3 遍检查均无「重新上架」按钮，重新上架流程结束。")
-            a.beep(True)             # 正常结束提示音
-            if not quiet:            # 非静默模式弹窗
-                a.msgbox("未检测到待重新上架物品，流程结束。", TITLE)
-            return 0                 # 正常退出
+        return False, None, None
+
+    while True:
+        round_no += 1  # 新一轮自增
+        print("\n" + "=" * 52)  # 轮次分隔线
+        print(f"  第 {round_no} 轮：检测「重新上架」")
+        print("=" * 52)
+
+        # 步骤1：3 遍检测「重新上架」（自动排除「取消出售」在售按钮）
+        found, relist_pos, relist_frame = _probe_relist()
+
+        if not found:  # 3 遍都无待上架物品 → 关闭拍卖行重开复检，最多 RELIST_REOPEN_ROUNDS 轮
+            reopen_round += 1
+            if reopen_round > a.RELIST_REOPEN_ROUNDS:
+                print(f"[上架] 关闭重开复检 {a.RELIST_REOPEN_ROUNDS} 轮均无「重新上架」按钮，流程结束。")
+                a.beep(True)  # 正常结束提示音
+                if not quiet:  # 非静默模式弹窗
+                    a.msgbox("多次刷新拍卖行仍无待重新上架物品，流程结束。", TITLE)
+                return 0  # 正常退出
+            print(f"[上架] 第 {reopen_round}/{a.RELIST_REOPEN_ROUNDS} 轮复检：关闭拍卖行 → 重开 → 点「我的上架」…")
+            _auction_close()              # 关闭拍卖行回城镇（内部等 RELIST_WAIT_CLOSE 秒）
+            _auction_reopen_mylist()      # 重开拍卖行并切到「我的上架」列表
+            continue                      # 回顶部在新列表上重新检测
+
+        reopen_round = 0  # 检测到待上架物品，关闭重开复检计数清零
 
         # 步骤2：点「重新上架」→ 3s 后点「出售数量」输入框
         a.mouse_click_fg(relist_pos[0], relist_pos[1], relist_frame)
@@ -414,8 +455,8 @@ def main():
     else:  # 未知模式参数
         print(f"  未知模式：{mode}（支持 mail / shop / char / relist / loop）")  # 提示合法模式
         return 2  # 返回码 2 表示参数错误退出
-    if mode == "relist":  # 重新上架模式：需先停在拍卖行「我的上架」界面
-        print("  请确认游戏已停在拍卖行「我的上架」界面。")  # 界面提醒
+    if mode == "relist":  # 重新上架模式：建议先停在拍卖行「我的上架」界面（无货会自动关闭重开复检）
+        print("  建议先停在拍卖行「我的上架」界面；无待上架物品时会自动关闭重开复检 5 轮。")  # 界面提醒
     else:  # 其余模式：需在城镇主界面
         print("  请确认游戏已切到城镇主界面。")  # 界面提醒
     print("=" * 52)  # 打印结尾分隔线
