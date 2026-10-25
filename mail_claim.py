@@ -277,7 +277,7 @@ def relist_loop(quiet):
         print(f"  第 {round_no} 轮：检测「重新上架」")
         print("=" * 52)
 
-        # 步骤1：检测「重新上架」按钮，3 遍（间隔 2s），都没有 → 退出
+        # 步骤1：检测「重新上架」按钮（自动排除「取消出售」在售按钮），3 遍（间隔 2s）都没有 → 退出
         found = False                 # 是否检测到待上架按钮
         relist_pos = None             # 命中按钮中心坐标
         relist_frame = None           # 命中时的画面（供点击复用，避免重复截图）
@@ -287,13 +287,13 @@ def relist_loop(quiet):
                 print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍截图失败，2s 后再查…")
                 time.sleep(2.0)
                 continue
-            s, c = a.detect_button(frame, a.TEMPLATE_RELIST, roi=a.relist_btn_roi(frame))  # 右侧按钮列检测
-            if s is not None and s >= a.RELIST_TH and c:  # 匹配达标
+            s, c = a.detect_relist_safe(frame)  # 安全检测：仅「重新上架」达标且不是「取消出售」才命中
+            if s is not None and c:  # 安全命中（函数内部已校验阈值与取消出售互斥）
                 print(f"[上架] 检测到「重新上架」（{s:.3f} @{c}）")
                 found = True
                 relist_pos, relist_frame = c, frame
                 break
-            print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍未检测到「重新上架」，2s 后再查…")
+            print(f"[上架] 第 {k+1}/{a.RELIST_CHECK_ROUNDS} 遍未检测到「重新上架」（已排除取消出售），2s 后再查…")
             time.sleep(2.0)           # 间隔 2s 再查
         if not found:                 # 3 遍都无待上架物品
             print("[上架] 3 遍检查均无「重新上架」按钮，重新上架流程结束。")

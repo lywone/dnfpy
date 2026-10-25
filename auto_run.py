@@ -110,6 +110,7 @@ TEMPLATE_RELIST_MAX = os.path.join(IMG_DIR, "template_relist_max.png")      # �
 TEMPLATE_RELIST_ENTER = os.path.join(IMG_DIR, "template_relist_enter.png")  # 数字键盘竖排「输入」长条模板
 TEMPLATE_RELIST_SELL = os.path.join(IMG_DIR, "template_relist_sell.png")    # 出售弹框底部「出售物品」按钮模板
 TEMPLATE_RELIST_CONFIRM = os.path.join(IMG_DIR, "template_relist_confirm.png")  # 二次确认弹框「确认」按钮模板
+TEMPLATE_CANCEL_SELL = os.path.join(IMG_DIR, "template_cancel_sell.png")    # 在售行「取消出售」金棕按钮模板（命中即跳过，绝不能点）
 
 RAW_PATH = os.path.join(IMG_DIR, "challenge_raw.png")  # --capture 截取的原始画面保存路径
 
@@ -159,6 +160,8 @@ DECOMPOSE_CLOSE_X = (920, 88)           # 分解弹框右上角 ×（千分比�
 
 # ---------------- 拍卖行重新上架 ----------------
 RELIST_TH = 0.60                        # 重新上架各按钮匹配阈值
+RELIST_CANCEL_TH = 0.60                  # 「取消出售」按钮匹配阈值（命中即排除，不点击）
+RELIST_ROW_TOL = 60                     # 判定两个按钮是否同一行的 y 容差（px，超过视为不同行）
 RELIST_CHECK_ROUNDS = 3                 # 列表未检测到「重新上架」的重复检查次数（3 遍都无则退出）
 # 模板未命中时的固定千分比兜底坐标（1280x720 实测换算；弹框/键盘内按钮位置不随行变化）
 RELIST_QTY_PERMILLE = (780, 674)        # 出售数量输入框（实测 (998,485)）
@@ -652,16 +655,35 @@ def detect_reward(frame):
 
 
 def relist_btn_roi(frame):
-    """列表行「重新上架」按钮搜索区域：右侧按钮列（x>0.82w, y 0.15-0.97h），
-    排除左侧导航与行情文字；下沿放到 0.97h 以覆盖滚动到列表底部的各行"""
+    """列表行「重新上架/取消出售」按钮搜索区域：右侧按钮列（x>0.82w, y 0.15-0.85h），
+    排除左侧导航、行情文字，以及底部「一键取消/一键重新上架/一键领取」全局按钮（y>0.85h）。"""
     h, w = frame.shape[0], frame.shape[1]  # 画面高宽
-    return (int(w * 0.82), int(h * 0.15), w, int(h * 0.97))
+    return (int(w * 0.82), int(h * 0.15), w, int(h * 0.85))
 
 
 def relist_kb_roi(frame):
     """数字键盘「最大/输入」搜索区域：右侧键盘列（x>0.88w, y 0.30-0.85h），排除左侧出售弹框"""
     h, w = frame.shape[0], frame.shape[1]  # 画面高宽
     return (int(w * 0.88), int(h * 0.30), w, int(h * 0.85))
+
+
+def detect_relist_safe(frame):
+    """在右侧按钮列内识别「可点击的重新上架」，排除「取消出售」按钮（绝不能误点）。
+    列表混排：期满行亮橙=重新上架（可点）；在售行金棕=取消出售（撤下在售物品，禁止点击）。
+    返回 (相似度, 中心)；没有安全的重新上架按钮时返回 (None, None)。
+    判定：先全局匹配「重新上架」得到候选位置；再在该候选所在行的窄条内单独检测「取消出售」，
+    候选行若是取消出售按钮则排除；另一行的取消出售不影响本行判定。"""
+    roi = relist_btn_roi(frame)  # 右侧行内按钮列（不含底部全局按钮）
+    sr, cr = detect_button(frame, TEMPLATE_RELIST, roi=roi)  # 重新上架匹配
+    if sr is None or sr < RELIST_TH or not cr:               # 重新上架未达标 → 无可点按钮
+        return None, None
+    x1, y1, x2, y2 = roi
+    # 候选位置所在行窄条（y 上下各 ROW_TOL），只在该行内排查取消出售
+    strip = (x1, max(y1, cr[1] - RELIST_ROW_TOL), x2, min(y2, cr[1] + RELIST_ROW_TOL))
+    sc, cc = detect_button(frame, TEMPLATE_CANCEL_SELL, roi=strip)  # 该行是否取消出售
+    if sc is not None and sc >= RELIST_CANCEL_TH:  # 候选行命中取消出售 → 排除不点击
+        return None, None
+    return sr, cr
 
 
 def confirm_reward(frame):
