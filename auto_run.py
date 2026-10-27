@@ -170,6 +170,7 @@ RELIST_ENTER_PERMILLE = (952, 707)     # 键盘竖排「输入」长条（实测
 RELIST_SELL_PERMILLE = (734, 926)       # 弹框底部「出售物品」（实测 (940,667)）
 RELIST_CONFIRM_PERMILLE = (504, 743)    # 二次确认「确认」按钮（实测 (645,535)）
 # 无货时关闭→重开拍卖行复检（后台 adb 通道，不置前抢焦点；1358x763 实测换算千分比）
+RELIST_START_WAIT = 10.0               # 启动后首次检测前等待秒数（给用户切到「我的上架」界面）
 RELIST_REOPEN_ROUNDS = 5                # 关闭重开复检最大轮数，5 轮都无待上架物品才退出
 RELIST_WAIT_CLOSE = 3.0                 # 关闭拍卖行后回城镇缓冲秒数（用户要求 3s）
 RELIST_WAIT_OPEN = 2.5                  # 点顶部入口后等拍卖行打开秒数

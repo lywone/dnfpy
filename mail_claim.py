@@ -299,6 +299,8 @@ def relist_loop(quiet):
       6) 等 2s → 点二次确认「确认」
       7) 等 5s → 回到列表，重复步骤 1
     任一步点击失败都不中断本轮，继续后续步骤；检测到货后复检计数清零重新计。"""
+    print(f"[上架] 启动等待 {a.RELIST_START_WAIT:.0f}s（请确认已停在拍卖行「我的上架」界面）…")
+    time.sleep(a.RELIST_START_WAIT)  # 启动缓冲：给用户时间切到我的上架界面
     round_no = 0               # 检测/上架尝试轮次计数
     reopen_round = 0           # 关闭重开复检计数（检测到待上架物品后清零）
 
